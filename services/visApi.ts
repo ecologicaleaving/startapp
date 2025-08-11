@@ -2,7 +2,6 @@ import { Tournament } from '../types/tournament';
 import { BeachMatch } from '../types/match';
 import { CacheService } from './CacheService';
 import { CachePerformanceMonitor } from './CachePerformanceMonitor';
-import { RealtimeSubscriptionService } from './RealtimeSubscriptionService';
 
 export type TournamentType = 'ALL' | 'FIVB' | 'CEV' | 'BPT' | 'LOCAL';
 
@@ -235,7 +234,7 @@ export class VisApiService {
       console.error('Error fetching active tournaments from direct API:', error);
       
       // Provide fallback mock data to prevent app from hanging
-      console.log('Using fallback mock data to prevent app hanging');
+      console.log('API call failed, using fallback mock data to prevent app hanging. Error:', error.message);
       return [
         {
           No: '1001',
@@ -363,8 +362,9 @@ export class VisApiService {
     try {
       const liveMatches = matches.filter(match => this.isLiveMatch(match));
       if (liveMatches.length > 0) {
-        console.log(`Found ${liveMatches.length} live matches, establishing real-time subscriptions`);
-        await RealtimeSubscriptionService.subscribeLiveMatches(liveMatches);
+        console.log(`Found ${liveMatches.length} live matches, real-time subscriptions would be established here`);
+        // TODO: Move this to a higher level service to avoid circular dependency
+        // await RealtimeSubscriptionService.subscribeLiveMatches(liveMatches);
       }
     } catch (error) {
       console.warn('Failed to establish live match subscriptions:', error);
