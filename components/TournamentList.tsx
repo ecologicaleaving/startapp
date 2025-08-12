@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
-  Text,
   FlatList,
   StyleSheet,
   ActivityIndicator,
   Alert,
   TouchableOpacity,
 } from 'react-native';
+import { Text, H1Text, H2Text, BodyText, CaptionText } from './Typography';
 import { Tournament } from '../types/tournament';
 import { TournamentType } from '../services/visApi';
 import { testSupabaseConnection } from '../services/supabase';
@@ -86,9 +86,9 @@ const TournamentItem: React.FC<TournamentItemProps> = ({
       <OfflineBadge isOfflineData={isOfflineData} />
       <View style={styles.tournamentHeader}>
         <View style={styles.tournamentHeaderLeft}>
-          <Text style={styles.tournamentNumber}>#{tournament.No}</Text>
+          <CaptionText style={styles.tournamentNumber}>#{tournament.No}</CaptionText>
           {tournament.Code && (
-            <Text style={styles.tournamentCode}>{tournament.Code}</Text>
+            <CaptionText style={styles.tournamentCode}>{tournament.Code}</CaptionText>
           )}
         </View>
         <View style={styles.tournamentHeaderRight}>
@@ -100,16 +100,16 @@ const TournamentItem: React.FC<TournamentItemProps> = ({
         </View>
       </View>
       
-      <Text style={styles.tournamentName}>
+      <H2Text style={styles.tournamentName}>
         {tournament.Title || tournament.Name || `Tournament ${tournament.No}`}
-      </Text>
+      </H2Text>
       
       {getLocation() && (
-        <Text style={styles.tournamentLocation}>📍 {getLocation()}</Text>
+        <BodyText style={styles.tournamentLocation}>📍 {getLocation()}</BodyText>
       )}
       
       {getDateRange() && (
-        <Text style={styles.tournamentDate}>📅 {getDateRange()}</Text>
+        <CaptionText style={styles.tournamentDate}>📅 {getDateRange()}</CaptionText>
       )}
     </TouchableOpacity>
   );
@@ -238,12 +238,12 @@ const TournamentList: React.FC = () => {
             ]}
             onPress={() => setSelectedType(type)}
           >
-            <Text style={[
+            <BodyText style={[
               styles.filterButtonText,
               selectedType === type && styles.activeFilterButtonText
             ]}>
               {type}
-            </Text>
+            </BodyText>
           </TouchableOpacity>
         ))}
       </View>
@@ -264,7 +264,7 @@ const TournamentList: React.FC = () => {
     return (
       <View style={styles.centerContainer}>
         <ActivityIndicator size="large" color="#0066cc" />
-        <Text style={styles.loadingText}>Loading tournaments...</Text>
+        <BodyText style={styles.loadingText}>Loading tournaments...</BodyText>
       </View>
     );
   }
@@ -273,18 +273,18 @@ const TournamentList: React.FC = () => {
     return (
       <View style={styles.centerContainer}>
         <NetworkStatus style={styles.networkStatus} />
-        <Text style={styles.errorText}>Error: {error}</Text>
-        <Text style={styles.errorSubtext}>
+        <H2Text style={styles.errorText}>Error: {error}</H2Text>
+        <BodyText style={styles.errorSubtext}>
           {isOffline 
             ? 'No cached tournament data available offline'
             : 'Please check your internet connection'
           }
-        </Text>
+        </BodyText>
         <TouchableOpacity 
           style={styles.retryButton} 
           onPress={loadTournaments}
         >
-          <Text style={styles.retryButtonText}>Try Again</Text>
+          <BodyText style={styles.retryButtonText}>Try Again</BodyText>
         </TouchableOpacity>
         
         {isConnected && (
@@ -292,7 +292,7 @@ const TournamentList: React.FC = () => {
             style={[styles.retryButton, styles.forceSyncButton]} 
             onPress={() => forceSyncNow().catch(console.error)}
           >
-            <Text style={styles.retryButtonText}>Force Sync</Text>
+            <BodyText style={styles.retryButtonText}>Force Sync</BodyText>
           </TouchableOpacity>
         )}
       </View>
@@ -357,7 +357,7 @@ const TournamentList: React.FC = () => {
       )}
       
       <View style={styles.titleRow}>
-        <Text style={styles.title}>Active Tournaments</Text>
+        <H1Text>Active Tournaments</H1Text>
         <TouchableOpacity 
           style={styles.statusLegendButton}
           onPress={() => setShowStatusLegend(!showStatusLegend)}
@@ -367,44 +367,44 @@ const TournamentList: React.FC = () => {
       </View>
       
       <View style={styles.subtitleContainer}>
-        <Text style={styles.subtitle}>
+        <BodyText style={styles.subtitle}>
           {getSubtitle()}
           {cacheResult && (
-            <Text style={styles.dataSourceText}>
+            <CaptionText style={styles.dataSourceText}>
               {' '}(from {cacheResult.source})
-            </Text>
+            </CaptionText>
           )}
-        </Text>
+        </BodyText>
         
         {/* Real-time status information */}
         {subscriptionActive && (
           <View style={styles.realtimeStatus}>
-            <Text style={styles.realtimeStatusText}>
+            <CaptionText style={styles.realtimeStatusText}>
               📡 Real-time updates active
-            </Text>
+            </CaptionText>
             {recentlyChangedTournaments.size > 0 && (
               <TouchableOpacity 
                 style={styles.clearChangesButton}
                 onPress={clearRecentChanges}
               >
-                <Text style={styles.clearChangesText}>
+                <CaptionText style={styles.clearChangesText}>
                   Clear {recentlyChangedTournaments.size} changes
-                </Text>
+                </CaptionText>
               </TouchableOpacity>
             )}
           </View>
         )}
         
         {statusError && (
-          <Text style={styles.statusError}>
+          <CaptionText style={styles.statusError}>
             ⚠️ Status subscription error: {statusError}
-          </Text>
+          </CaptionText>
         )}
         
         {statusLastUpdate && (
-          <Text style={styles.statusLastUpdate}>
+          <CaptionText style={styles.statusLastUpdate}>
             Last status update: {statusLastUpdate.toLocaleTimeString()}
-          </Text>
+          </CaptionText>
         )}
       </View>
       
@@ -417,9 +417,9 @@ const TournamentList: React.FC = () => {
               style={styles.freshness}
             />
             {freshnessInfo && (
-              <Text style={styles.freshnessText}>
+              <CaptionText style={styles.freshnessText}>
                 Data {freshnessInfo.relativeTime}
-              </Text>
+              </CaptionText>
             )}
           </View>
         )}
@@ -436,12 +436,12 @@ const TournamentList: React.FC = () => {
       
       {supabaseConnected !== null && (
         <View style={styles.connectionStatus}>
-          <Text style={[
+          <CaptionText style={[
             styles.connectionText,
             supabaseConnected ? styles.connectedText : styles.disconnectedText
           ]}>
             🗄️ Supabase: {supabaseConnected ? 'Connected' : 'Disconnected'}
-          </Text>
+          </CaptionText>
         </View>
       )}
       
@@ -489,8 +489,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
     textAlign: 'center',
     color: '#333',
   },
@@ -499,13 +497,11 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   statusLegendIcon: {
-    fontSize: 16,
   },
   subtitleContainer: {
     marginBottom: 20,
   },
   subtitle: {
-    fontSize: 16,
     textAlign: 'center',
     marginBottom: 8,
     color: '#666',
@@ -518,7 +514,6 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   realtimeStatusText: {
-    fontSize: 12,
     color: '#4caf50',
     fontWeight: '600',
   },
@@ -529,34 +524,28 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   clearChangesText: {
-    fontSize: 10,
     color: 'white',
     fontWeight: '600',
   },
   statusError: {
-    fontSize: 12,
     color: '#f44336',
     textAlign: 'center',
     marginBottom: 4,
   },
   statusLastUpdate: {
-    fontSize: 10,
     color: '#999',
     textAlign: 'center',
   },
   loadingText: {
     marginTop: 16,
-    fontSize: 16,
     color: '#666',
   },
   errorText: {
-    fontSize: 18,
     color: '#d32f2f',
     textAlign: 'center',
     marginBottom: 8,
   },
   errorSubtext: {
-    fontSize: 14,
     color: '#666',
     textAlign: 'center',
   },
@@ -602,28 +591,22 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
   },
   tournamentNumber: {
-    fontSize: 12,
     color: '#0066cc',
     fontWeight: 'bold',
   },
   tournamentCode: {
-    fontSize: 12,
     color: '#999',
     fontFamily: 'monospace',
   },
   tournamentName: {
-    fontSize: 16,
-    fontWeight: 'bold',
     color: '#333',
     marginBottom: 4,
   },
   tournamentLocation: {
-    fontSize: 14,
     color: '#666',
     marginBottom: 2,
   },
   tournamentDate: {
-    fontSize: 12,
     color: '#999',
   },
   filterContainer: {
@@ -647,7 +630,6 @@ const styles = StyleSheet.create({
   filterButtonText: {
     color: '#0066cc',
     fontWeight: '500',
-    fontSize: 14,
   },
   activeFilterButtonText: {
     color: '#fff',
@@ -657,7 +639,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   connectionText: {
-    fontSize: 12,
     fontWeight: '500',
   },
   connectedText: {
@@ -676,7 +657,6 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   dataSourceText: {
-    fontSize: 12,
     color: '#999',
     fontStyle: 'italic',
   },
@@ -689,7 +669,6 @@ const styles = StyleSheet.create({
   },
   retryButtonText: {
     color: '#fff',
-    fontSize: 16,
     fontWeight: '600',
   },
   freshnessContainer: {
@@ -703,7 +682,6 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   freshnessText: {
-    fontSize: 12,
     color: '#666',
   },
   statusRow: {

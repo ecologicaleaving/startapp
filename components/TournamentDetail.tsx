@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
@@ -9,6 +8,7 @@ import {
   ActivityIndicator,
   Modal,
 } from 'react-native';
+import { Text, H2Text, BodyText, CaptionText } from './Typography';
 import { Tournament } from '../types/tournament';
 import { BeachMatch } from '../types/match';
 import { VisApiService, TournamentType, GenderType } from '../services/visApi';
@@ -58,7 +58,7 @@ const DropdownModal: React.FC<DropdownModalProps> = ({
         <View style={styles.modalContainer}>
           <TouchableOpacity activeOpacity={1} onPress={() => {}}>
             <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>{title}</Text>
+              <H2Text style={styles.modalTitle}>{title}</H2Text>
               <FlatList
                 data={data}
                 keyExtractor={(item) => item.id}
@@ -73,21 +73,21 @@ const DropdownModal: React.FC<DropdownModalProps> = ({
                       onClose();
                     }}
                   >
-                    <Text
+                    <BodyText
                       style={[
                         styles.modalItemText,
                         selectedValue === item.value && styles.modalItemTextSelected,
                       ]}
                     >
                       {item.label}
-                    </Text>
+                    </BodyText>
                   </TouchableOpacity>
                 )}
                 style={styles.modalList}
                 showsVerticalScrollIndicator={true}
               />
               <TouchableOpacity style={styles.modalCloseButton} onPress={onClose}>
-                <Text style={styles.modalCloseText}>Close</Text>
+                <BodyText style={styles.modalCloseText}>Close</BodyText>
               </TouchableOpacity>
             </View>
           </TouchableOpacity>
@@ -532,30 +532,30 @@ const TournamentDetail: React.FC<TournamentDetailProps> = ({ tournament, onBack 
       <View style={[styles.genderBand, { backgroundColor: getGenderColor(match) }]} />
       
       <View style={styles.matchHeader}>
-        <Text style={styles.matchNumber}>Match #{match.NoInTournament}</Text>
+        <H2Text style={styles.matchNumber}>Match #{match.NoInTournament}</H2Text>
         <View style={styles.matchDateTime}>
-          <Text style={styles.matchDate}>{formatMatchDate(match.LocalDate)}</Text>
-          <Text style={styles.matchTime}>{formatMatchTime(match.LocalTime)}</Text>
+          <BodyText style={styles.matchDate}>{formatMatchDate(match.LocalDate)}</BodyText>
+          <CaptionText style={styles.matchTime}>{formatMatchTime(match.LocalTime)}</CaptionText>
         </View>
       </View>
       
       <View style={styles.matchTeams}>
         <View style={styles.teamContainer}>
-          <Text style={styles.teamName}>{match.TeamAName || 'TBD'}</Text>
-          <Text style={styles.teamScore}>{match.MatchPointsA || '0'}</Text>
+          <BodyText style={styles.teamName}>{match.TeamAName || 'TBD'}</BodyText>
+          <H2Text style={styles.teamScore}>{match.MatchPointsA || '0'}</H2Text>
         </View>
         
-        <Text style={styles.vsText}>VS</Text>
+        <BodyText style={styles.vsText}>VS</BodyText>
         
         <View style={styles.teamContainer}>
-          <Text style={styles.teamName}>{match.TeamBName || 'TBD'}</Text>
-          <Text style={styles.teamScore}>{match.MatchPointsB || '0'}</Text>
+          <BodyText style={styles.teamName}>{match.TeamBName || 'TBD'}</BodyText>
+          <H2Text style={styles.teamScore}>{match.MatchPointsB || '0'}</H2Text>
         </View>
       </View>
       
       <View style={styles.matchDetails}>
         {match.Court && (
-          <Text style={styles.matchDetail}>🏐 Court {match.Court}</Text>
+          <CaptionText style={styles.matchDetail}>🏐 Court {match.Court}</CaptionText>
         )}
         <View style={styles.matchStatusContainer}>
           <LiveMatchIndicator

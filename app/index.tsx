@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { TournamentStorageService } from '../services/TournamentStorageService';
+import { BrandLoadingState, BrandSplashScreen } from '../components/Brand';
+import { colors } from '../theme/tokens';
 import TournamentSelection from './tournament-selection';
 import RefereeDashboard from './referee-dashboard';
 
@@ -36,9 +38,11 @@ export default function Index() {
 
   if (navigationState === 'loading') {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#FF6B35" />
-      </View>
+      <BrandLoadingState 
+        variant="logo"
+        message="Initializing Referee Tool..."
+        size="large"
+      />
     );
   }
 
@@ -54,6 +58,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.background,
   },
 });

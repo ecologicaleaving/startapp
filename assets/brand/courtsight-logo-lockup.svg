@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="800" height="256" viewBox="0 0 800 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title">
+  <title>CourtSight Lockup</title>
+  <g transform="translate(0,0)">
+    <rect x="24" y="24" width="160" height="160" rx="24" fill="#1B365D"/>
+    <line x1="40" y1="104" x2="184" y2="104" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round" opacity="0.96"/>
+    <line x1="104" y1="40" x2="104" y2="184" stroke="#4A90A4" stroke-width="5" stroke-linecap="round" opacity="0.55"/>
+    <path d="M70 114 L98 142 L152 92" fill="none" stroke="#FF6B35" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g transform="translate(208,0)">
+    <text x="0" y="120" font-family="'SF Pro Display','Roboto','Arial',sans-serif" font-size="72" font-weight="600" fill="#1B365D">Court<tspan fill="#FF6B35">Sight</tspan></text>
+    <text x="2" y="160" font-family="'SF Pro Display','Roboto','Arial',sans-serif" font-size="24" font-weight="500" fill="#4A90A4" opacity="0.9">Professional Referee Tool</text>
+  </g>
+</svg>

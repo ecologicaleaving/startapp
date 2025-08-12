@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="800" height="256" viewBox="0 0 800 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title">
+  <title>RefEdge Lockup</title>
+  <!-- Symbol background -->
+  <rect x="24" y="24" width="160" height="160" rx="24" fill="#1B365D"/>
+  <!-- Whistle rotated -45° about (104,104) -->
+  <g transform="rotate(-45 104 104)">
+    <circle cx="92" cy="144" r="24" fill="#FFFFFF"/>
+    <rect x="88" y="122" width="60" height="30" rx="15" fill="#FFFFFF"/>
+    <path d="M148 122 L176 116 L196 122 L196 142 L148 142 Z" fill="#FFFFFF"/>
+    <rect x="186" y="124" width="22" height="18" rx="4" fill="#FFFFFF"/>
+    <rect x="190" y="132" width="14" height="5" rx="2.5" fill="#1B365D"/>
+    <circle cx="116" cy="138" r="10" fill="#1B365D"/>
+    <circle cx="72" cy="120" r="9" fill="none" stroke="#FF6B35" stroke-width="6"/>
+    <rect x="78" y="124" width="14" height="6" rx="3" fill="#FFFFFF"/>
+    <path d="M150 126 L194 136" stroke="#1B365D" stroke-width="3.5" stroke-linecap="round" opacity="0.7"/>
+  </g>
+  <!-- Wordmark -->
+  <g transform="translate(208,0)">
+    <text x="0" y="120" font-family="'SF Pro Display','Roboto','Arial',sans-serif" font-size="72" font-weight="700" fill="#1B365D">Ref<tspan fill="#FF6B35">Edge</tspan></text>
+    <text x="2" y="160" font-family="'SF Pro Display','Roboto','Arial',sans-serif" font-size="24" font-weight="500" fill="#4A90A4" opacity="0.9">Professional Referee Tool</text>
+  </g>
+</svg>

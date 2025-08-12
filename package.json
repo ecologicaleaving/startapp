@@ -10,6 +10,9 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "test": "jest",
+    "test:contrast": "jest --testPathPattern=\"contrastValidator.test\"",
+    "validate:contrast": "node scripts/validate-contrast.js",
+    "validate:accessibility": "npm run validate:contrast && npm run test:contrast",
     "setup-supabase": "node scripts/setup-supabase.js",
     "test-database": "node scripts/test-database-schema.js"
   },
