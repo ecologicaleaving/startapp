@@ -3,8 +3,13 @@
  * WCAG AAA Compliant Color System for Tournament Referees
  */
 
-import { colors, brandColors } from '../theme/tokens';
+import { colors, brandColors, statusColors as tokenStatusColors } from '../theme/tokens';
 import { calculateContrast, getBestContrastColor } from './contrast';
+import { 
+  getStatusColor as getNewStatusColor, 
+  getStatusColorWithText,
+  TournamentStatus 
+} from './statusColors';
 
 /**
  * Get a color value by semantic name
@@ -33,7 +38,8 @@ export function getTextColor(backgroundColor: keyof typeof colors): string {
 }
 
 /**
- * Status-driven color mapping for referee states
+ * Legacy status-driven color mapping for referee states (deprecated)
+ * @deprecated Use tokenStatusColors and getNewStatusColor from statusColors.ts instead
  */
 export const statusColors = {
   active: colors.success,      // Active/live match indicators
@@ -47,18 +53,35 @@ export const statusColors = {
 export type StatusType = keyof typeof statusColors;
 
 /**
- * Get color for specific referee status
+ * Get color for specific referee status (legacy)
+ * @deprecated Use getNewStatusColor from statusColors.ts instead
  */
 export function getStatusColor(status: StatusType): string {
   return statusColors[status];
 }
 
 /**
- * Get appropriate text color for status backgrounds
+ * Get appropriate text color for status backgrounds (legacy)
+ * @deprecated Use getStatusColorWithText from statusColors.ts instead
  */
 export function getStatusTextColor(status: StatusType): string {
   const statusColor = statusColors[status];
   return getBestContrastColor(statusColor);
+}
+
+/**
+ * Enhanced status color system - Story 1.4 implementation
+ * Get color for tournament status with WCAG AAA compliance
+ */
+export function getTournamentStatusColor(status: TournamentStatus): string {
+  return getNewStatusColor(status);
+}
+
+/**
+ * Get complete status styling with automatic contrast optimization
+ */
+export function getTournamentStatusStyle(status: TournamentStatus) {
+  return getStatusColorWithText(status);
 }
 
 /**

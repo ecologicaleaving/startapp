@@ -21,6 +21,8 @@ import PerformanceDashboard, { PerformanceIndicator } from './PerformanceDashboa
 import TournamentStatusIndicator from './tournament/TournamentStatusIndicator';
 import ScheduleChangeIndicator, { ScheduleChangesDetail } from './tournament/ScheduleChangeIndicator';
 import CourtAssignmentIndicator, { CourtChangesDetail } from './tournament/CourtAssignmentIndicator';
+import { StatusBadge, StatusCard, StatusIcon } from './Status';
+import { getStatusColor, getStatusColorWithText, determineTournamentStatus, determineMatchStatus } from '../utils/statusColors';
 
 interface TournamentDetailProps {
   tournament: Tournament;
@@ -526,8 +528,13 @@ const TournamentDetail: React.FC<TournamentDetailProps> = ({ tournament, onBack 
     return gender === 'M' ? '#4CAF50' : gender === 'W' ? '#E91E63' : '#9E9E9E'; // Gray for unknown/mixed
   };
 
-  const renderMatchItem = ({ item: match }: { item: BeachMatch }) => (
-    <View style={styles.matchItem}>
+  const renderMatchItem = ({ item: match }: { item: BeachMatch }) => {
+    // Determine match status for color coding
+    const matchStatus = determineMatchStatus(match);
+    const statusColors = getStatusColorWithText(matchStatus);
+    
+    return (
+    <View style={[styles.matchItem, { borderLeftWidth: 4, borderLeftColor: statusColors.backgroundColor }]}>
       {/* Gender indicator band */}
       <View style={[styles.genderBand, { backgroundColor: getGenderColor(match) }]} />
       
@@ -558,6 +565,13 @@ const TournamentDetail: React.FC<TournamentDetailProps> = ({ tournament, onBack 
           <CaptionText style={styles.matchDetail}>🏐 Court {match.Court}</CaptionText>
         )}
         <View style={styles.matchStatusContainer}>
+          <StatusBadge 
+            status={matchStatus}
+            variant="outlined"
+            size="small"
+            showIcon={true}
+            style={styles.matchStatusBadge}
+          />
           <LiveMatchIndicator
             match={match}
             isLive={liveMatches.some(liveMatch => liveMatch.No === match.No)}
@@ -626,6 +640,7 @@ const TournamentDetail: React.FC<TournamentDetailProps> = ({ tournament, onBack 
       )}
     </View>
   );
+};
 
   const renderFilterControls = () => (
     <View style={styles.filterContainer}>
@@ -842,7 +857,13 @@ const TournamentDetail: React.FC<TournamentDetailProps> = ({ tournament, onBack 
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Status:</Text>
             <View style={styles.detailValueWithIndicator}>
-              <Text style={styles.detailValue}>{tournamentWithStatus.Status}</Text>
+              <StatusCard
+                status={determineTournamentStatus(tournamentWithStatus)}
+                title={tournamentWithStatus.Status}
+                variant=\"compact\"
+                showIcon={true}
+                style={styles.tournamentStatusCard}
+              />
               <TournamentStatusIndicator
                 tournament={tournamentWithStatus}
                 isRecentlyChanged={statusEvents.length > 0}
@@ -1774,6 +1795,14 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     textAlign: 'center',
     marginTop: 8,
+  },
+  // Status component styles
+  matchStatusBadge: {
+    marginBottom: 4,
+  },
+  tournamentStatusCard: {
+    flex: 1,
+    marginRight: 8,
   },
 });
 

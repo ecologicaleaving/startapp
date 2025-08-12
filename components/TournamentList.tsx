@@ -24,6 +24,8 @@ import { StorageAlert, StorageStatusIndicator } from './StorageAlert';
 import { useStorageMonitoring } from '../hooks/useStorageManager';
 import { CompactTournamentStatusIndicator, TournamentStatusLegend } from './tournament/TournamentStatusIndicator';
 import MinimalTournamentDetail from './MinimalTournamentDetail';
+import { StatusBadge, StatusCard } from './Status';
+import { getStatusColor, getStatusColorWithText, determineTournamentStatus } from '../utils/statusColors';
 
 interface TournamentItemProps {
   tournament: Tournament;
@@ -74,11 +76,16 @@ const TournamentItem: React.FC<TournamentItemProps> = ({
     return formatDate(tournament.StartDate) || formatDate(tournament.EndDate);
   };
 
+  // Determine tournament status for color coding
+  const tournamentStatus = determineTournamentStatus(tournament);
+  const statusColors = getStatusColorWithText(tournamentStatus);
+  
   return (
     <TouchableOpacity 
       style={[
         styles.tournamentItem,
-        isRecentlyChanged && styles.recentlyChangedItem
+        isRecentlyChanged && styles.recentlyChangedItem,
+        { borderLeftWidth: 4, borderLeftColor: statusColors.backgroundColor }
       ]} 
       onPress={onPress} 
       activeOpacity={0.7}
@@ -92,6 +99,12 @@ const TournamentItem: React.FC<TournamentItemProps> = ({
           )}
         </View>
         <View style={styles.tournamentHeaderRight}>
+          <StatusBadge 
+            status={tournamentStatus}
+            variant="solid"
+            size="small"
+            showIcon={false}
+          />
           <CompactTournamentStatusIndicator 
             tournament={tournament}
             isRecentlyChanged={isRecentlyChanged}

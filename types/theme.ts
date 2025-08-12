@@ -54,8 +54,18 @@ export interface SpacingToken {
   xxl: number;
 }
 
+// Status-specific color mappings for tournament referees
+export interface StatusColors {
+  current: string;      // Current/Active assignments (High-visibility alert orange)
+  upcoming: string;     // Upcoming assignments (Professional blue)
+  completed: string;    // Completed assignments (Success green)
+  cancelled: string;    // Cancelled/Changed assignments (Warning indicators)
+  emergency: string;    // Emergency/Urgent states (Maximum visibility)
+}
+
 export interface DesignTokens {
   colors: ColorToken;
+  statusColors: StatusColors;
   typography: TypographyScale;
   spacing: SpacingToken;
   contrast: ContrastValidation;

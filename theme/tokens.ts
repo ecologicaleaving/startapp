@@ -3,7 +3,7 @@
  * High Contrast (7:1 minimum) Color Palette for Tournament Referees
  */
 
-import { DesignTokens } from '../types/theme';
+import { DesignTokens, StatusColors } from '../types/theme';
 import { calculateContrast, validateWCAG } from '../utils/contrast';
 
 // FIVB Brand Color Palette (WCAG AAA compliant - 7:1 minimum contrast)
@@ -33,6 +33,25 @@ export const brandColors = {
   primaryLight: '#E8EDF5',   // Light variant of primary
   secondaryLight: '#E8F2F5', // Light variant of secondary
   accentLight: '#FFF0E8',    // Light variant of accent
+} as const;
+
+// Status-Driven Color Coding System (WCAG AAA compliant - 7:1 minimum contrast)
+// Based on Epic 001 User Story 4 requirements - using only WCAG AAA compliant colors
+export const statusColors: StatusColors = {
+  // Current/Active: High-visibility - use textPrimary for guaranteed WCAG AAA compliance
+  current: colors.textPrimary,  // 10.98:1 contrast on white background ✅ (guaranteed WCAG AAA color)
+  
+  // Upcoming: Professional blue - using existing secondary color
+  upcoming: colors.secondary,   // 8.40:1 contrast on white background ✅ (existing WCAG AAA color)
+  
+  // Completed: Success green - using existing success color
+  completed: colors.success,    // 8.14:1 contrast on white background ✅ (existing WCAG AAA color)
+  
+  // Cancelled/Changed: Clear warning indicators - using primary for high contrast
+  cancelled: colors.primary,    // 12.12:1 contrast on white background ✅ (existing WCAG AAA color)
+  
+  // Emergency/Urgent: Maximum visibility treatment - using existing error color
+  emergency: colors.error,      // 9.28:1 contrast on white background ✅ (existing WCAG AAA color)
 } as const;
 
 // Typography Scale (from referee-frontend-spec/branding-style-guide.md)
@@ -117,11 +136,38 @@ export const contrast = {
     onPrimary: calculateContrast(colors.error, colors.primary),
     onSecondary: calculateContrast(colors.error, colors.secondary),
   },
+  // Status Color Contrast Validation
+  statusCurrent: {
+    onBackground: calculateContrast(statusColors.current, colors.background),
+    onPrimary: calculateContrast(statusColors.current, colors.primary),
+    onSecondary: calculateContrast(statusColors.current, colors.secondary),
+  },
+  statusUpcoming: {
+    onBackground: calculateContrast(statusColors.upcoming, colors.background),
+    onPrimary: calculateContrast(statusColors.upcoming, colors.primary),
+    onSecondary: calculateContrast(statusColors.upcoming, colors.secondary),
+  },
+  statusCompleted: {
+    onBackground: calculateContrast(statusColors.completed, colors.background),
+    onPrimary: calculateContrast(statusColors.completed, colors.primary),
+    onSecondary: calculateContrast(statusColors.completed, colors.secondary),
+  },
+  statusCancelled: {
+    onBackground: calculateContrast(statusColors.cancelled, colors.background),
+    onPrimary: calculateContrast(statusColors.cancelled, colors.primary),
+    onSecondary: calculateContrast(statusColors.cancelled, colors.secondary),
+  },
+  statusEmergency: {
+    onBackground: calculateContrast(statusColors.emergency, colors.background),
+    onPrimary: calculateContrast(statusColors.emergency, colors.primary),
+    onSecondary: calculateContrast(statusColors.emergency, colors.secondary),
+  },
 };
 
 // Complete Design Token Export
 export const designTokens: DesignTokens = {
   colors,
+  statusColors,
   typography,
   spacing,
   contrast,
