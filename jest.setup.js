@@ -1,10 +1,32 @@
 // Jest setup for testing
 // Skip react-native-gesture-handler for service tests
 
-// Mock AsyncStorage
-jest.mock('@react-native-async-storage/async-storage', () =>
-  require('@react-native-async-storage/async-storage/jest/async-storage-mock')
-);
+// Mock AsyncStorage with proper implementation
+jest.mock('@react-native-async-storage/async-storage', () => {
+  const storage = {};
+  return {
+    default: {
+      getItem: jest.fn((key) => Promise.resolve(storage[key] || null)),
+      setItem: jest.fn((key, value) => {
+        storage[key] = value;
+        return Promise.resolve();
+      }),
+      removeItem: jest.fn((key) => {
+        delete storage[key];
+        return Promise.resolve();
+      }),
+      multiRemove: jest.fn((keys) => {
+        keys.forEach(key => delete storage[key]);
+        return Promise.resolve();
+      }),
+      getAllKeys: jest.fn(() => Promise.resolve(Object.keys(storage))),
+      clear: jest.fn(() => {
+        Object.keys(storage).forEach(key => delete storage[key]);
+        return Promise.resolve();
+      }),
+    }
+  };
+});
 
 // Mock expo-router
 jest.mock('expo-router', () => ({
@@ -26,6 +48,40 @@ jest.mock('expo-constants', () => ({
       ios: {},
     },
   },
+}));
+
+// Mock NetInfo for network tests
+jest.mock('@react-native-community/netinfo', () => ({
+  addEventListener: jest.fn(() => jest.fn()),
+  fetch: jest.fn(() => Promise.resolve({
+    isConnected: true,
+    type: 'wifi',
+    isInternetReachable: true,
+  })),
+  refresh: jest.fn(() => Promise.resolve({
+    isConnected: true,
+    type: 'wifi', 
+    isInternetReachable: true,
+  })),
+}));
+
+// Mock Supabase
+jest.mock('./services/supabase', () => ({
+  supabase: {
+    channel: jest.fn(() => ({
+      on: jest.fn().mockReturnThis(),
+      subscribe: jest.fn(() => Promise.resolve({ status: 'SUBSCRIBED' })),
+      unsubscribe: jest.fn(() => Promise.resolve({ status: 'CLOSED' })),
+    })),
+    removeChannel: jest.fn(() => Promise.resolve()),
+    from: jest.fn(() => ({
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      gte: jest.fn().mockReturnThis(),
+      lte: jest.fn().mockReturnThis(),
+    })),
+  },
+  testSupabaseConnection: jest.fn(() => Promise.resolve(true)),
 }));
 
 // Mock React Navigation

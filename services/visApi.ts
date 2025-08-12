@@ -1,7 +1,8 @@
 import { Tournament } from '../types/tournament';
 import { BeachMatch } from '../types/match';
-import { CacheService } from './CacheService';
-import { CachePerformanceMonitor } from './CachePerformanceMonitor';
+import { IVisApiService } from './interfaces/IVisApiService';
+// Remove CacheService import to break circular dependency
+// CacheService will use this class through the factory pattern
 
 export type TournamentType = 'ALL' | 'FIVB' | 'CEV' | 'BPT' | 'LOCAL';
 
@@ -9,7 +10,7 @@ const VIS_BASE_URL = 'https://www.fivb.org/Vis2009/XmlRequest.asmx';
 
 export type GenderType = 'M' | 'W' | 'Mixed' | 'Unknown';
 
-export class VisApiService {
+export class VisApiService implements IVisApiService {
   // Extract gender from tournament code (M/W prefix)
   static extractGenderFromCode(code?: string): GenderType {
     if (!code) return 'Unknown';
@@ -94,55 +95,25 @@ export class VisApiService {
     try {
       console.log('VisApiService: getTournamentListWithDetails called with options:', filterOptions);
       
-      // Initialize cache service if not already done
+      // For external callers, use CacheService through lazy loading to avoid circular dependency
+      const { CacheService } = await import('./CacheService');
+      
       console.log('VisApiService: Initializing CacheService...');
       CacheService.initialize();
       console.log('VisApiService: CacheService initialized');
       
-      // Monitor cache performance
-      console.log('VisApiService: Starting cache performance monitoring...');
-      const performanceResult = await CachePerformanceMonitor.monitorCacheTierPerformance(
-        'cache_service',
-        async () => {
-          console.log('VisApiService: Calling CacheService.getTournaments...');
-          const result = await CacheService.getTournaments(filterOptions);
-          console.log('VisApiService: CacheService.getTournaments returned:', result.source, result.data.length, 'items');
-          return result;
-        }
-      );
+      console.log('VisApiService: Calling CacheService.getTournaments...');
+      const result = await CacheService.getTournaments(filterOptions);
+      console.log('VisApiService: CacheService.getTournaments returned:', result.source, result.data.length, 'items');
       
-      if (performanceResult.result && performanceResult.result.data) {
-        console.log(
-          `Tournament data served from ${performanceResult.result.source} cache in ${performanceResult.duration.toFixed(2)}ms ` +
-          `(performant: ${performanceResult.performant})`
-        );
-        
-        // Log performance warning if cache is slow
-        if (!performanceResult.performant) {
-          console.warn(
-            `Cache performance warning: ${performanceResult.duration.toFixed(2)}ms exceeds ${performanceResult.threshold}ms threshold`
-          );
-        }
-        
-        return performanceResult.result.data;
-      }
-
-      // If cache fails, fallback to direct API (should not happen as CacheService handles this)
-      console.warn('Cache service failed, falling back to direct API');
-      return await this.fetchDirectFromAPI(filterOptions);
+      return result.data;
     } catch (error) {
       console.error('Error in getTournamentListWithDetails:', error);
       
-      // Final fallback to direct API with performance monitoring
+      // Final fallback to direct API
       try {
         console.log('Attempting direct API fallback after cache error');
-        const apiResult = await CachePerformanceMonitor.monitorCacheTierPerformance(
-          'api',
-          async () => this.fetchDirectFromAPI(filterOptions)
-        );
-        
-        console.log(`Direct API fallback completed in ${apiResult.duration.toFixed(2)}ms`);
-        return apiResult.result;
+        return await this.fetchDirectFromAPI(filterOptions);
       } catch (fallbackError) {
         console.error('Direct API fallback also failed:', fallbackError);
         throw new Error('Failed to fetch active tournaments');
@@ -293,46 +264,32 @@ export class VisApiService {
     console.log(`VisApiService: getBeachMatchList called for tournament ${tournamentNo}`);
     
     try {
+      // For external callers, use CacheService through lazy loading to avoid circular dependency
+      const { CacheService } = await import('./CacheService');
+      
       // Initialize cache service if not already done
       CacheService.initialize();
       console.log(`VisApiService: Cache service initialized, trying cache first`);
       
-      // Monitor cache performance
-      const performanceResult = await CachePerformanceMonitor.monitorCacheTierPerformance(
-        'cache_service',
-        async () => CacheService.getMatches(tournamentNo)
-      );
+      const result = await CacheService.getMatches(tournamentNo);
       
       console.log(`VisApiService: Cache result:`, {
-        hasResult: !!performanceResult.result,
-        hasData: !!(performanceResult.result && performanceResult.result.data),
-        dataLength: performanceResult.result?.data?.length,
-        source: performanceResult.result?.source,
-        duration: performanceResult.duration
+        hasResult: !!result,
+        hasData: !!(result && result.data),
+        dataLength: result?.data?.length,
+        source: result?.source
       });
       
-      if (performanceResult.result && performanceResult.result.data) {
-        console.log(
-          `VisApiService: Match data served from ${performanceResult.result.source} cache in ${performanceResult.duration.toFixed(2)}ms ` +
-          `(performant: ${performanceResult.performant})`
-        );
-        
-        // Log performance warning if cache is slow
-        if (!performanceResult.performant) {
-          console.warn(
-            `VisApiService: Cache performance warning: ${performanceResult.duration.toFixed(2)}ms exceeds ${performanceResult.threshold}ms threshold`
-          );
-        }
-        
-        console.log(`VisApiService: Returning ${performanceResult.result.data.length} matches from ${performanceResult.result.source} cache`);
+      if (result && result.data) {
+        console.log(`VisApiService: Returning ${result.data.length} matches from ${result.source} cache`);
         
         // Check for live matches and establish real-time subscriptions
-        await this.handleLiveMatchSubscriptions(performanceResult.result.data);
+        await this.handleLiveMatchSubscriptions(result.data);
         
-        return performanceResult.result.data;
+        return result.data;
       }
 
-      // If cache fails, fallback to direct API (should not happen as CacheService handles this)
+      // If cache fails, fallback to direct API
       console.warn('VisApiService: Cache service failed, falling back to direct API');
       const directMatches = await this.fetchMatchesDirectFromAPI(tournamentNo);
       console.log(`VisApiService: Direct API fallback returned ${directMatches.length} matches`);
@@ -340,16 +297,12 @@ export class VisApiService {
     } catch (error) {
       console.error(`VisApiService: Error in getBeachMatchList for tournament ${tournamentNo}:`, error);
       
-      // Final fallback to direct API with performance monitoring
+      // Final fallback to direct API
       try {
         console.log('VisApiService: Attempting direct API fallback after cache error');
-        const apiResult = await CachePerformanceMonitor.monitorCacheTierPerformance(
-          'api',
-          async () => this.fetchMatchesDirectFromAPI(tournamentNo)
-        );
-        
-        console.log(`VisApiService: Direct API fallback completed in ${apiResult.duration.toFixed(2)}ms with ${apiResult.result.length} matches`);
-        return apiResult.result;
+        const result = await this.fetchMatchesDirectFromAPI(tournamentNo);
+        console.log(`VisApiService: Direct API fallback completed with ${result.length} matches`);
+        return result;
       } catch (fallbackError) {
         console.error('VisApiService: Direct API fallback also failed:', fallbackError);
         throw new Error('Failed to fetch tournament matches');

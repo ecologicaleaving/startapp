@@ -9,7 +9,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { Tournament } from '../types/tournament';
-import { VisApiService, TournamentType } from '../services/visApi';
+import { TournamentType } from '../services/visApi';
 import { testSupabaseConnection } from '../services/supabase';
 import { CacheService } from '../services/CacheService';
 import { CacheResult } from '../types/cache';
@@ -22,8 +22,7 @@ import { useAutoSync } from '../hooks/useSyncManager';
 import { SyncStatus } from './SyncStatus';
 import { StorageAlert, StorageStatusIndicator } from './StorageAlert';
 import { useStorageMonitoring } from '../hooks/useStorageManager';
-import { useTournamentStatus } from '../hooks/useTournamentStatus';
-import TournamentStatusIndicator, { CompactTournamentStatusIndicator, TournamentStatusLegend } from './tournament/TournamentStatusIndicator';
+import { CompactTournamentStatusIndicator, TournamentStatusLegend } from './tournament/TournamentStatusIndicator';
 import MinimalTournamentDetail from './MinimalTournamentDetail';
 
 interface TournamentItemProps {
@@ -130,7 +129,7 @@ const TournamentList: React.FC = () => {
   const { isConnected, isOffline } = useNetworkStatus();
   const isOfflineData = useIsOfflineData(cacheResult);
   const freshnessInfo = useDataFreshness(cacheResult);
-  const { isSyncing, forceSyncNow } = useAutoSync({ currentlyActive: true, tournamentType: selectedType });
+  const { forceSyncNow } = useAutoSync({ currentlyActive: true, tournamentType: selectedType });
   const { shouldShowAlert } = useStorageMonitoring();
   // Temporarily disable problematic tournament status hook to prevent infinite re-renders
   const tournamentsWithStatus = tournaments;
@@ -207,7 +206,7 @@ const TournamentList: React.FC = () => {
   useEffect(() => {
     loadTournaments();
     checkSupabaseConnection();
-  }, [selectedType, isOffline]); // Remove function dependencies to prevent infinite re-renders
+  }, [selectedType, isOffline, loadTournaments, checkSupabaseConnection]);
 
   const renderTournament = ({ item }: { item: Tournament }) => {
     // Use tournament with status updates if available

@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   FlatList,
   ActivityIndicator,
-  TextInput,
   Modal,
 } from 'react-native';
 import { Tournament } from '../types/tournament';
@@ -15,9 +14,8 @@ import { BeachMatch } from '../types/match';
 import { VisApiService, TournamentType, GenderType } from '../services/visApi';
 import { useRealtimeMatches } from '../hooks/useRealtimeData';
 import { useTournamentDetailStatus } from '../hooks/useTournamentDetailStatus';
-import { ConnectionState } from '../services/RealtimePerformanceMonitor';
 import ConnectionStatusIndicator, { CompactConnectionIndicator } from './ConnectionStatusIndicator';
-import LiveMatchIndicator, { LiveBadge } from './LiveMatchIndicator';
+import LiveMatchIndicator from './LiveMatchIndicator';
 import ManualRefreshButton, { CompactRefreshButton } from './ManualRefreshButton';
 import PerformanceDashboard, { PerformanceIndicator } from './PerformanceDashboard';
 import TournamentStatusIndicator from './tournament/TournamentStatusIndicator';
@@ -115,12 +113,10 @@ const TournamentDetail: React.FC<TournamentDetailProps> = ({ tournament, onBack 
     error: matchesError,
     lastUpdated,
     connectionState,
-    isConnected,
     isSubscribed,
     hasLiveMatches,
     refresh: refreshMatches,
   } = useRealtimeMatches(currentTournament.No, true);
-  const [loadingRelated, setLoadingRelated] = useState(false);
   
   // Tournament detail status with real-time updates
   const {
@@ -134,8 +130,7 @@ const TournamentDetail: React.FC<TournamentDetailProps> = ({ tournament, onBack 
     subscriptionActive: statusSubscriptionActive,
     error: statusError,
     lastUpdate: statusLastUpdate,
-    clearRecentChanges,
-    refreshTournamentStatus
+    clearRecentChanges
   } = useTournamentDetailStatus({
     tournament: currentTournament,
     matches,
@@ -208,7 +203,7 @@ const TournamentDetail: React.FC<TournamentDetailProps> = ({ tournament, onBack 
     if (relatedTournaments.length > 1) {
       loadAllMatches();
     }
-  }, [loadAllMatches]);
+  }, [loadAllMatches, relatedTournaments.length]);
 
   // Handle gender filter selection by switching tournaments
   useEffect(() => {
@@ -311,8 +306,8 @@ const TournamentDetail: React.FC<TournamentDetailProps> = ({ tournament, onBack 
         // Otherwise it's scheduled for the future
         console.log(`Match ${match.NoInTournament} considered scheduled (future)`);
         return 'scheduled';
-      } catch (error) {
-        console.warn(`Date parsing error for match ${match.NoInTournament}:`, error);
+      } catch {
+        console.warn(`Date parsing error for match ${match.NoInTournament}`);
         // If date parsing fails, default to scheduled
         return 'scheduled';
       }
@@ -519,16 +514,6 @@ const TournamentDetail: React.FC<TournamentDetailProps> = ({ tournament, onBack 
     }
   };
 
-  const getMatchResult = (match: BeachMatch) => {
-    const pointsA = parseInt(match.MatchPointsA || '0');
-    const pointsB = parseInt(match.MatchPointsB || '0');
-    
-    if (pointsA === 0 && pointsB === 0) {
-      return 'Scheduled';
-    }
-    
-    return `${pointsA}-${pointsB}`;
-  };
 
   const getGenderColor = (match: BeachMatch): string => {
     // First try to get gender from tournament metadata if available

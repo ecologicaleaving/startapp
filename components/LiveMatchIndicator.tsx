@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, Animated, useEffect } from 'react-native';
 import { BeachMatch } from '../types/match';
 
@@ -13,7 +13,7 @@ const LiveMatchIndicator: React.FC<LiveMatchIndicatorProps> = ({
   isLive,
   showScore = true,
 }) => {
-  const pulseAnimation = new Animated.Value(1);
+  const pulseAnimation = useMemo(() => new Animated.Value(1), []);
 
   useEffect(() => {
     if (isLive) {

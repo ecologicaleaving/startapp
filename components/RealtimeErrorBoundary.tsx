@@ -1,7 +1,6 @@
 import React, { Component, ReactNode } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { RealtimeSubscriptionService } from '../services/RealtimeSubscriptionService';
-import { ConnectionState } from '../services/RealtimePerformanceMonitor';
 import { RealtimeFallbackService } from '../services/RealtimeFallbackService';
 
 interface Props {

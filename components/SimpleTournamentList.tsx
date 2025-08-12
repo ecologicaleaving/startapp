@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   StyleSheet,
-  Alert,
 } from 'react-native';
 import { Tournament } from '../types/tournament';
 import { VisApiService } from '../services/visApi';

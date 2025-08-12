@@ -1,8 +1,6 @@
 import React, { useState } from 'react';
-import { TouchableOpacity, Text, StyleSheet, ActivityIndicator, View, Modal, ScrollView } from 'react-native';
+import { TouchableOpacity, Text, StyleSheet, ActivityIndicator, View } from 'react-native';
 import { ConnectionState } from '../services/RealtimePerformanceMonitor';
-import { ConnectionCircuitBreaker } from '../services/ConnectionCircuitBreaker';
-import NetworkStateManager, { NetworkState, ConnectionQuality } from '../services/NetworkStateManager';
 
 interface ManualRefreshButtonProps {
   onRefresh: () => void;
@@ -24,7 +22,6 @@ const ManualRefreshButton: React.FC<ManualRefreshButtonProps> = ({
   tournamentId,
 }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [showDiagnostics, setShowDiagnostics] = useState(false);
 
   const handleRefresh = async () => {
     if (disabled || isRefreshing) return;

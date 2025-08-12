@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Modal } from 'react-native';
 import { RealtimePerformanceMonitor } from '../services/RealtimePerformanceMonitor';
-import { ConnectionState } from '../services/RealtimePerformanceMonitor';
 
 interface PerformanceDashboardProps {
   visible: boolean;

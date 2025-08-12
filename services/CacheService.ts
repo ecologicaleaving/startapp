@@ -5,16 +5,9 @@ import { MemoryCacheManager } from './MemoryCacheManager';
 import { LocalStorageManager } from './LocalStorageManager';
 import { CacheStatsService } from './CacheStatsService';
 import { supabase } from './supabase';
-// Breaking circular dependency with lazy loading
-let VisApiService: any = null;
-const getVisApiService = async () => {
-  if (!VisApiService) {
-    const visApiModule = await import('./visApi');
-    VisApiService = visApiModule.VisApiService;
-  }
-  return VisApiService;
-};
 import { NetworkMonitor } from './NetworkMonitor';
+import { visApiServiceFactory } from './VisApiServiceFactory';
+import { IVisApiService } from './interfaces/IVisApiService';
 
 /**
  * Multi-tier cache service with intelligent fallback logic
@@ -541,7 +534,7 @@ export class CacheService {
   private static async getTournamentsFromAPI(filters?: FilterOptions): Promise<Tournament[]> {
     console.log('CacheService: getTournamentsFromAPI called, bypassing cache to call direct API');
     console.log('CacheService: Starting direct API call...');
-    const visApi = await getVisApiService();
+    const visApi = await visApiServiceFactory.getInstance();
     // Call the direct API method to avoid circular dependency
     const startTime = Date.now();
     const result = await visApi.fetchDirectFromAPI(filters);
@@ -551,7 +544,7 @@ export class CacheService {
   }
 
   private static async getMatchesFromAPI(tournamentNo: string): Promise<BeachMatch[]> {
-    const visApi = await getVisApiService();
+    const visApi = await visApiServiceFactory.getInstance();
     return await visApi.fetchMatchesDirectFromAPI(tournamentNo);
   }
 

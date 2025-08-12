@@ -54,7 +54,7 @@ export function StorageAlert({
           ]
         );
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to optimize storage');
     }
   };
@@ -72,7 +72,7 @@ export function StorageAlert({
       } else {
         Alert.alert('Error', 'Failed to clear offline cache');
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to clear offline cache');
     }
   };
@@ -139,7 +139,7 @@ export function StorageWarning({
   style?: any;
   onOptimize?: () => void;
 }) {
-  const { shouldShowAlert, alertMessage, currentUsage } = useStorageMonitoring(60000, 0.7);
+  const { shouldShowAlert, currentUsage } = useStorageMonitoring(60000, 0.7);
 
   if (!shouldShowAlert) {
     return null;
