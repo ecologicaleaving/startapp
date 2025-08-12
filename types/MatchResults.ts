@@ -44,3 +44,78 @@ export interface MatchResultsCache {
   timestamp: number;
   tournamentNo: string;
 }
+
+/**
+ * Extended Match Result Types for Story 2.2
+ * Match Result Card Optimization - Component Types
+ */
+
+export type MatchType = 'beach' | 'indoor' | 'quick';
+
+export type ResultStatus = 'draft' | 'submitted' | 'confirmed' | 'synced' | 'error';
+
+export type SpecialResult = 'forfeit' | 'timeout' | 'injury' | 'weather' | 'other';
+
+export interface SetScore {
+  homeScore: number;
+  awayScore: number;
+  completed: boolean;
+}
+
+export interface EnhancedMatchResult extends MatchResult {
+  matchType: MatchType;
+  resultStatus: ResultStatus;
+  specialResult?: SpecialResult;
+  specialResultNotes?: string;
+  weatherConditions?: string;
+  temperature?: number;
+  windSpeed?: number;
+  notes?: string;
+  submittedAt?: Date;
+  submittedBy?: string;
+  lastModified: Date;
+  isOffline?: boolean;
+  syncPending?: boolean;
+}
+
+export interface MatchResultCardProps {
+  matchResult: EnhancedMatchResult;
+  variant?: MatchType;
+  isEditable?: boolean;
+  showQuickActions?: boolean;
+  onScoreUpdate?: (matchResult: EnhancedMatchResult) => void;
+  onSubmit?: (matchResult: EnhancedMatchResult) => void;
+  onSpecialResult?: (type: SpecialResult, notes?: string) => void;
+  onPress?: (matchResult: EnhancedMatchResult) => void;
+}
+
+export interface ScoreEntryProps {
+  homeScore: number;
+  awayScore: number;
+  setNumber: number;
+  isCompleted: boolean;
+  isEditable: boolean;
+  onScoreChange: (homeScore: number, awayScore: number) => void;
+  onSetComplete: () => void;
+}
+
+export interface QuickActionProps {
+  type: SpecialResult;
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+}
+
+export interface ResultValidationError {
+  field: string;
+  message: string;
+  severity: 'error' | 'warning';
+}
+
+export interface OfflineCacheEntry {
+  id: string;
+  matchResult: EnhancedMatchResult;
+  timestamp: Date;
+  attempts: number;
+  lastError?: string;
+}

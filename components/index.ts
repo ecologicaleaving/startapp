@@ -11,3 +11,6 @@ export * from './Icons';
 
 // Assignment Components (Story 2.1)
 export * from './Assignment';
+
+// Match Result Components (Story 2.2)
+export * from './MatchResult';
