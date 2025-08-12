@@ -10,14 +10,37 @@ import {
 } from 'react-native';
 import { Tournament } from '../types/tournament';
 import { VisApiService, TournamentType } from '../services/visApi';
-import TournamentDetail from './TournamentDetail';
+import { testSupabaseConnection } from '../services/supabase';
+import { CacheService } from '../services/CacheService';
+import { CacheResult } from '../types/cache';
+import { NetworkStatus, OfflineBanner, OfflineBadge } from './offline';
+import { DataFreshness } from './DataFreshness';
+import { useNetworkStatus } from '../hooks/useNetworkStatus';
+import { useIsOfflineData } from '../hooks/useOfflineStatus';
+import { useDataFreshness } from '../hooks/useDataFreshness';
+import { useAutoSync } from '../hooks/useSyncManager';
+import { SyncStatus } from './SyncStatus';
+import { StorageAlert, StorageStatusIndicator } from './StorageAlert';
+import { useStorageMonitoring } from '../hooks/useStorageManager';
+import { useTournamentStatus } from '../hooks/useTournamentStatus';
+import TournamentStatusIndicator, { CompactTournamentStatusIndicator, TournamentStatusLegend } from './tournament/TournamentStatusIndicator';
+import MinimalTournamentDetail from './MinimalTournamentDetail';
 
 interface TournamentItemProps {
   tournament: Tournament;
   onPress: () => void;
+  isOfflineData?: boolean;
+  isRecentlyChanged?: boolean;
+  subscriptionActive?: boolean;
 }
 
-const TournamentItem: React.FC<TournamentItemProps> = ({ tournament, onPress }) => {
+const TournamentItem: React.FC<TournamentItemProps> = ({ 
+  tournament, 
+  onPress, 
+  isOfflineData = false,
+  isRecentlyChanged = false,
+  subscriptionActive = false
+}) => {
   const formatDate = (dateStr?: string) => {
     if (!dateStr) return '';
     try {
@@ -53,12 +76,29 @@ const TournamentItem: React.FC<TournamentItemProps> = ({ tournament, onPress }) 
   };
 
   return (
-    <TouchableOpacity style={styles.tournamentItem} onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity 
+      style={[
+        styles.tournamentItem,
+        isRecentlyChanged && styles.recentlyChangedItem
+      ]} 
+      onPress={onPress} 
+      activeOpacity={0.7}
+    >
+      <OfflineBadge isOfflineData={isOfflineData} />
       <View style={styles.tournamentHeader}>
-        <Text style={styles.tournamentNumber}>#{tournament.No}</Text>
-        {tournament.Code && (
-          <Text style={styles.tournamentCode}>{tournament.Code}</Text>
-        )}
+        <View style={styles.tournamentHeaderLeft}>
+          <Text style={styles.tournamentNumber}>#{tournament.No}</Text>
+          {tournament.Code && (
+            <Text style={styles.tournamentCode}>{tournament.Code}</Text>
+          )}
+        </View>
+        <View style={styles.tournamentHeaderRight}>
+          <CompactTournamentStatusIndicator 
+            tournament={tournament}
+            isRecentlyChanged={isRecentlyChanged}
+            subscriptionActive={subscriptionActive}
+          />
+        </View>
       </View>
       
       <Text style={styles.tournamentName}>
@@ -82,37 +122,108 @@ const TournamentList: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<TournamentType>('BPT');
   const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
+  const [supabaseConnected, setSupabaseConnected] = useState<boolean | null>(null);
+  const [cacheResult, setCacheResult] = useState<CacheResult<Tournament[]> | null>(null);
+  const [showOfflineBanner, setShowOfflineBanner] = useState(false);
+  const [showStatusLegend, setShowStatusLegend] = useState(false);
+  
+  const { isConnected, isOffline } = useNetworkStatus();
+  const isOfflineData = useIsOfflineData(cacheResult);
+  const freshnessInfo = useDataFreshness(cacheResult);
+  const { isSyncing, forceSyncNow } = useAutoSync({ currentlyActive: true, tournamentType: selectedType });
+  const { shouldShowAlert } = useStorageMonitoring();
+  // Temporarily disable problematic tournament status hook to prevent infinite re-renders
+  const tournamentsWithStatus = tournaments;
+  const recentlyChangedTournaments = new Set();
+  const subscriptionActive = false;
+  const statusError = null;
+  const statusLastUpdate = null;
+  const clearRecentChanges = () => {};
+
+  const checkSupabaseConnection = useCallback(async () => {
+    try {
+      const isConnected = await testSupabaseConnection();
+      setSupabaseConnected(isConnected);
+    } catch (err) {
+      console.error('Failed to test Supabase connection:', err);
+      setSupabaseConnected(false);
+    }
+  }, []);
 
   const loadTournaments = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
       
-      // Always load active tournaments with details and apply type filter
-      const tournamentList = await VisApiService.getTournamentListWithDetails({ 
-        currentlyActive: true, 
-        tournamentType: selectedType 
-      });
+      // Initialize cache service
+      CacheService.initialize();
       
-      setTournaments(tournamentList);
+      // Use offline-first strategy when network is unavailable
+      let result: CacheResult<Tournament[]>;
+      if (isOffline) {
+        console.log('Network offline, using offline-first strategy');
+        result = await CacheService.getTournamentsOffline({ 
+          currentlyActive: true, 
+          tournamentType: selectedType,
+          year: 2025  // Only this year's tournaments for performance
+        });
+      } else {
+        result = await CacheService.getTournaments({ 
+          currentlyActive: true, 
+          tournamentType: selectedType,
+          year: 2025  // Only this year's tournaments for performance
+        });
+      }
+      
+      setTournaments(result.data);
+      setCacheResult(result);
+      
+      // Show offline banner if data is from offline sources
+      if (result.source === 'offline' || result.source === 'localStorage') {
+        setShowOfflineBanner(true);
+      }
+      
+      // Hide offline banner if we got fresh data from API/Supabase
+      if (result.source === 'api' || result.source === 'supabase') {
+        setShowOfflineBanner(false);
+      }
+      
+      console.log(`Loaded ${result.data.length} tournaments from ${result.source}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
-      Alert.alert('Error', 'Failed to load tournaments');
+      const errorMessage = err instanceof Error ? err.message : 'An error occurred';
+      setError(errorMessage);
+      
+      // Show different error message for offline vs online
+      if (isOffline) {
+        Alert.alert('Offline', 'No cached tournament data available. Connect to the internet to load tournaments.');
+      } else {
+        Alert.alert('Error', 'Failed to load tournaments');
+      }
     } finally {
       setLoading(false);
     }
-  }, [selectedType]);
+  }, [selectedType, isOffline]);
 
   useEffect(() => {
     loadTournaments();
-  }, [loadTournaments]);
+    checkSupabaseConnection();
+  }, [selectedType, isOffline]); // Remove function dependencies to prevent infinite re-renders
 
-  const renderTournament = ({ item }: { item: Tournament }) => (
-    <TournamentItem 
-      tournament={item} 
-      onPress={() => setSelectedTournament(item)} 
-    />
-  );
+  const renderTournament = ({ item }: { item: Tournament }) => {
+    // Use tournament with status updates if available
+    const tournamentWithStatus = tournamentsWithStatus.find(t => t.No === item.No) || item;
+    const isRecentlyChanged = recentlyChangedTournaments.has(item.No);
+    
+    return (
+      <TournamentItem 
+        tournament={tournamentWithStatus} 
+        onPress={() => setSelectedTournament(tournamentWithStatus)}
+        isOfflineData={isOfflineData}
+        isRecentlyChanged={isRecentlyChanged}
+        subscriptionActive={subscriptionActive}
+      />
+    );
+  };
 
   const renderFilterTabs = () => {
     const filterTypes: TournamentType[] = ['ALL', 'FIVB', 'CEV', 'BPT'];
@@ -143,7 +254,7 @@ const TournamentList: React.FC = () => {
   // Show tournament detail if a tournament is selected
   if (selectedTournament) {
     return (
-      <TournamentDetail 
+      <MinimalTournamentDetail 
         tournament={selectedTournament} 
         onBack={() => setSelectedTournament(null)} 
       />
@@ -162,14 +273,39 @@ const TournamentList: React.FC = () => {
   if (error) {
     return (
       <View style={styles.centerContainer}>
+        <NetworkStatus style={styles.networkStatus} />
         <Text style={styles.errorText}>Error: {error}</Text>
-        <Text style={styles.errorSubtext}>Please check your internet connection</Text>
+        <Text style={styles.errorSubtext}>
+          {isOffline 
+            ? 'No cached tournament data available offline'
+            : 'Please check your internet connection'
+          }
+        </Text>
+        <TouchableOpacity 
+          style={styles.retryButton} 
+          onPress={loadTournaments}
+        >
+          <Text style={styles.retryButtonText}>Try Again</Text>
+        </TouchableOpacity>
+        
+        {isConnected && (
+          <TouchableOpacity 
+            style={[styles.retryButton, styles.forceSyncButton]} 
+            onPress={() => forceSyncNow().catch(console.error)}
+          >
+            <Text style={styles.retryButtonText}>Force Sync</Text>
+          </TouchableOpacity>
+        )}
       </View>
     );
   }
 
   const getSubtitle = () => {
-    if (tournaments.length === 0) return 'No active tournaments found. Showing upcoming tournaments when available.';
+    if (tournaments.length === 0) {
+      return isOffline 
+        ? 'No cached tournaments available offline.'
+        : 'No active tournaments found. Showing upcoming tournaments when available.';
+    }
     
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -210,12 +346,113 @@ const TournamentList: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Active Tournaments</Text>
-      <Text style={styles.subtitle}>
-        {getSubtitle()}
-      </Text>
+      <NetworkStatus compact style={styles.networkStatusCompact} />
+      
+      <StorageAlert autoShow={shouldShowAlert} />
+      
+      {showOfflineBanner && (
+        <OfflineBanner 
+          onDismiss={() => setShowOfflineBanner(false)}
+          showWhenOnline={isConnected && cacheResult?.source === 'offline'}
+        />
+      )}
+      
+      <View style={styles.titleRow}>
+        <Text style={styles.title}>Active Tournaments</Text>
+        <TouchableOpacity 
+          style={styles.statusLegendButton}
+          onPress={() => setShowStatusLegend(!showStatusLegend)}
+        >
+          <Text style={styles.statusLegendIcon}>ℹ️</Text>
+        </TouchableOpacity>
+      </View>
+      
+      <View style={styles.subtitleContainer}>
+        <Text style={styles.subtitle}>
+          {getSubtitle()}
+          {cacheResult && (
+            <Text style={styles.dataSourceText}>
+              {' '}(from {cacheResult.source})
+            </Text>
+          )}
+        </Text>
+        
+        {/* Real-time status information */}
+        {subscriptionActive && (
+          <View style={styles.realtimeStatus}>
+            <Text style={styles.realtimeStatusText}>
+              📡 Real-time updates active
+            </Text>
+            {recentlyChangedTournaments.size > 0 && (
+              <TouchableOpacity 
+                style={styles.clearChangesButton}
+                onPress={clearRecentChanges}
+              >
+                <Text style={styles.clearChangesText}>
+                  Clear {recentlyChangedTournaments.size} changes
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+        
+        {statusError && (
+          <Text style={styles.statusError}>
+            ⚠️ Status subscription error: {statusError}
+          </Text>
+        )}
+        
+        {statusLastUpdate && (
+          <Text style={styles.statusLastUpdate}>
+            Last status update: {statusLastUpdate.toLocaleTimeString()}
+          </Text>
+        )}
+      </View>
+      
+      <View style={styles.statusRow}>
+        {cacheResult && (
+          <View style={styles.freshnessContainer}>
+            <DataFreshness 
+              timestamp={cacheResult.timestamp}
+              size="medium"
+              style={styles.freshness}
+            />
+            {freshnessInfo && (
+              <Text style={styles.freshnessText}>
+                Data {freshnessInfo.relativeTime}
+              </Text>
+            )}
+          </View>
+        )}
+        
+        <View style={styles.statusIndicators}>
+          <SyncStatus 
+            compact 
+            style={styles.syncStatus}
+            onForceSync={() => forceSyncNow().catch(console.error)}
+          />
+          <StorageStatusIndicator style={styles.storageStatus} />
+        </View>
+      </View>
+      
+      {supabaseConnected !== null && (
+        <View style={styles.connectionStatus}>
+          <Text style={[
+            styles.connectionText,
+            supabaseConnected ? styles.connectedText : styles.disconnectedText
+          ]}>
+            🗄️ Supabase: {supabaseConnected ? 'Connected' : 'Disconnected'}
+          </Text>
+        </View>
+      )}
       
       {renderFilterTabs()}
+      
+      {showStatusLegend && (
+        <TournamentStatusLegend 
+          onClose={() => setShowStatusLegend(false)}
+        />
+      )}
       
       <FlatList
         data={tournaments}
@@ -224,6 +461,11 @@ const TournamentList: React.FC = () => {
         style={styles.list}
         contentContainerStyle={styles.listContainer}
         showsVerticalScrollIndicator={true}
+        extraData={{
+          recentlyChangedTournaments,
+          subscriptionActive,
+          tournamentsWithStatus
+        }}
       />
     </View>
   );
@@ -241,18 +483,67 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#f5f5f5',
   },
+  titleRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
     textAlign: 'center',
-    marginBottom: 8,
     color: '#333',
+  },
+  statusLegendButton: {
+    marginLeft: 12,
+    padding: 4,
+  },
+  statusLegendIcon: {
+    fontSize: 16,
+  },
+  subtitleContainer: {
+    marginBottom: 20,
   },
   subtitle: {
     fontSize: 16,
     textAlign: 'center',
-    marginBottom: 20,
+    marginBottom: 8,
     color: '#666',
+  },
+  realtimeStatus: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  realtimeStatusText: {
+    fontSize: 12,
+    color: '#4caf50',
+    fontWeight: '600',
+  },
+  clearChangesButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    backgroundColor: '#ff9800',
+    borderRadius: 4,
+  },
+  clearChangesText: {
+    fontSize: 10,
+    color: 'white',
+    fontWeight: '600',
+  },
+  statusError: {
+    fontSize: 12,
+    color: '#f44336',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  statusLastUpdate: {
+    fontSize: 10,
+    color: '#999',
+    textAlign: 'center',
   },
   loadingText: {
     marginTop: 16,
@@ -296,6 +587,20 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 8,
+  },
+  tournamentHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  tournamentHeaderRight: {
+    alignItems: 'center',
+  },
+  recentlyChangedItem: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#ff9800',
+    shadowColor: '#ff9800',
+    shadowOpacity: 0.2,
   },
   tournamentNumber: {
     fontSize: 12,
@@ -347,6 +652,82 @@ const styles = StyleSheet.create({
   },
   activeFilterButtonText: {
     color: '#fff',
+  },
+  connectionStatus: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  connectionText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  connectedText: {
+    color: '#4caf50',
+  },
+  disconnectedText: {
+    color: '#f44336',
+  },
+  networkStatus: {
+    marginBottom: 16,
+  },
+  networkStatusCompact: {
+    position: 'absolute',
+    top: 60,
+    right: 16,
+    zIndex: 1,
+  },
+  dataSourceText: {
+    fontSize: 12,
+    color: '#999',
+    fontStyle: 'italic',
+  },
+  retryButton: {
+    marginTop: 16,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    backgroundColor: '#0066cc',
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  freshnessContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 16,
+  },
+  freshness: {
+    marginRight: 8,
+  },
+  freshnessText: {
+    fontSize: 12,
+    color: '#666',
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    paddingHorizontal: 16,
+  },
+  syncStatus: {
+    marginLeft: 8,
+  },
+  forceSyncButton: {
+    backgroundColor: '#4CAF50',
+    marginTop: 8,
+  },
+  statusIndicators: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  storageStatus: {
+    marginLeft: 4,
   },
 });
 

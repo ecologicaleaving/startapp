@@ -1,0 +1,14 @@
+{
+  "tasks": {
+    "test": "deno test --allow-env --allow-net test/",
+    "dev": "deno run --allow-env --allow-net --watch index.ts"
+  },
+  "imports": {
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
+  },
+  "compilerOptions": {
+    "allowJs": true,
+    "lib": ["deno.window"],
+    "strict": true
+  }
+}

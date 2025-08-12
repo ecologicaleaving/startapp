@@ -13,6 +13,16 @@ import {
 import { Tournament } from '../types/tournament';
 import { BeachMatch } from '../types/match';
 import { VisApiService, TournamentType, GenderType } from '../services/visApi';
+import { useRealtimeMatches } from '../hooks/useRealtimeData';
+import { useTournamentDetailStatus } from '../hooks/useTournamentDetailStatus';
+import { ConnectionState } from '../services/RealtimePerformanceMonitor';
+import ConnectionStatusIndicator, { CompactConnectionIndicator } from './ConnectionStatusIndicator';
+import LiveMatchIndicator, { LiveBadge } from './LiveMatchIndicator';
+import ManualRefreshButton, { CompactRefreshButton } from './ManualRefreshButton';
+import PerformanceDashboard, { PerformanceIndicator } from './PerformanceDashboard';
+import TournamentStatusIndicator from './tournament/TournamentStatusIndicator';
+import ScheduleChangeIndicator, { ScheduleChangesDetail } from './tournament/ScheduleChangeIndicator';
+import CourtAssignmentIndicator, { CourtChangesDetail } from './tournament/CourtAssignmentIndicator';
 
 interface TournamentDetailProps {
   tournament: Tournament;
@@ -91,15 +101,48 @@ const DropdownModal: React.FC<DropdownModalProps> = ({
 
 const TournamentDetail: React.FC<TournamentDetailProps> = ({ tournament, onBack }) => {
   const [activeTab, setActiveTab] = useState<TabType>('playing');
-  const [matches, setMatches] = useState<BeachMatch[]>([]);
   const [allMatches, setAllMatches] = useState<BeachMatch[]>([]); // Matches from all related tournaments
-  const [matchesLoading, setMatchesLoading] = useState(true);
-  const [matchesError, setMatchesError] = useState<string | null>(null);
   
   // Gender switching states
   const [relatedTournaments, setRelatedTournaments] = useState<Tournament[]>([tournament]);
   const [currentTournament, setCurrentTournament] = useState<Tournament>(tournament);
+  
+  // Real-time matches data with WebSocket subscriptions
+  const {
+    matches,
+    liveMatches,
+    loading: matchesLoading,
+    error: matchesError,
+    lastUpdated,
+    connectionState,
+    isConnected,
+    isSubscribed,
+    hasLiveMatches,
+    refresh: refreshMatches,
+  } = useRealtimeMatches(currentTournament.No, true);
   const [loadingRelated, setLoadingRelated] = useState(false);
+  
+  // Tournament detail status with real-time updates
+  const {
+    tournament: tournamentWithStatus,
+    statusEvents,
+    scheduleChanges,
+    courtChanges,
+    progress: tournamentProgress,
+    recentScheduleChanges,
+    recentCourtChanges,
+    subscriptionActive: statusSubscriptionActive,
+    error: statusError,
+    lastUpdate: statusLastUpdate,
+    clearRecentChanges,
+    refreshTournamentStatus
+  } = useTournamentDetailStatus({
+    tournament: currentTournament,
+    matches,
+    enableScheduleChangeTracking: true,
+    enableCourtChangeTracking: true,
+    enableProgressTracking: true
+  });
   
   // Filter states
   const [selectedCourt, setSelectedCourt] = useState<string>('');
@@ -111,20 +154,10 @@ const TournamentDetail: React.FC<TournamentDetailProps> = ({ tournament, onBack 
   const [courtDropdownOpen, setCourtDropdownOpen] = useState<boolean>(false);
   const [refereeDropdownOpen, setRefereeDropdownOpen] = useState<boolean>(false);
   const [genderDropdownOpen, setGenderDropdownOpen] = useState<boolean>(false);
+  const [performanceDashboardVisible, setPerformanceDashboardVisible] = useState<boolean>(false);
+  const [scheduleChangesVisible, setScheduleChangesVisible] = useState<boolean>(false);
+  const [courtChangesVisible, setCourtChangesVisible] = useState<boolean>(false);
 
-  const loadMatches = useCallback(async () => {
-    try {
-      setMatchesLoading(true);
-      setMatchesError(null);
-      const matchList = await VisApiService.getBeachMatchList(currentTournament.No);
-      setMatches(matchList);
-    } catch (error) {
-      setMatchesError(error instanceof Error ? error.message : 'Failed to load matches');
-      console.error('Failed to load matches:', error);
-    } finally {
-      setMatchesLoading(false);
-    }
-  }, [currentTournament.No]);
 
   const loadAllMatches = useCallback(async () => {
     try {
@@ -166,9 +199,6 @@ const TournamentDetail: React.FC<TournamentDetailProps> = ({ tournament, onBack 
     }
   }, [tournament]);
 
-  useEffect(() => {
-    loadMatches();
-  }, [loadMatches]);
 
   useEffect(() => {
     loadRelatedTournaments();
@@ -543,15 +573,27 @@ const TournamentDetail: React.FC<TournamentDetailProps> = ({ tournament, onBack 
           <Text style={styles.matchDetail}>🏐 Court {match.Court}</Text>
         )}
         <View style={styles.matchStatusContainer}>
-          {getMatchStatus(match) === 'playing' && (
-            <Text style={styles.matchStatusPlaying}>🔴 LIVE</Text>
-          )}
-          {getMatchStatus(match) === 'scheduled' && (
-            <Text style={styles.matchStatusScheduled}>⏰ Scheduled</Text>
-          )}
-          {getMatchStatus(match) === 'completed' && (
-            <Text style={styles.matchStatusCompleted}>✓ Final: {getMatchResult(match)}</Text>
-          )}
+          <LiveMatchIndicator
+            match={match}
+            isLive={liveMatches.some(liveMatch => liveMatch.No === match.No)}
+            showScore={true}
+          />
+        </View>
+        
+        {/* Real-time change indicators */}
+        <View style={styles.changeIndicators}>
+          <ScheduleChangeIndicator
+            scheduleChanges={scheduleChanges}
+            match={match}
+            isRecentlyChanged={recentScheduleChanges.has(match.NoInTournament)}
+            compact={true}
+          />
+          <CourtAssignmentIndicator
+            courtChanges={courtChanges}
+            match={match}
+            isRecentlyChanged={recentCourtChanges.has(match.NoInTournament)}
+            compact={true}
+          />
         </View>
       </View>
       
@@ -714,7 +756,7 @@ const TournamentDetail: React.FC<TournamentDetailProps> = ({ tournament, onBack 
         <View style={styles.centerContent}>
           <Text style={styles.errorText}>Error loading matches</Text>
           <Text style={styles.errorSubText}>{matchesError}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={loadMatches}>
+          <TouchableOpacity style={styles.retryButton} onPress={refreshMatches}>
             <Text style={styles.retryButtonText}>Retry</Text>
           </TouchableOpacity>
         </View>
@@ -732,6 +774,19 @@ const TournamentDetail: React.FC<TournamentDetailProps> = ({ tournament, onBack 
 
     return (
       <View style={styles.matchesContainer}>
+        <ConnectionStatusIndicator
+          connectionState={connectionState}
+          isSubscribed={isSubscribed}
+          hasLiveMatches={hasLiveMatches}
+          lastUpdated={lastUpdated}
+          showDetails={true}
+        />
+        <ManualRefreshButton
+          onRefresh={refreshMatches}
+          connectionState={connectionState}
+          lastUpdated={lastUpdated}
+          showLastUpdated={true}
+        />
         {renderFilterControls()}
         {filteredMatches.length === 0 ? (
           <View style={styles.centerContent}>
@@ -798,10 +853,17 @@ const TournamentDetail: React.FC<TournamentDetailProps> = ({ tournament, onBack 
       <View style={styles.detailsSection}>
         <Text style={styles.sectionTitle}>Additional Information</Text>
         
-        {currentTournament.Status && (
+        {tournamentWithStatus.Status && (
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Status:</Text>
-            <Text style={styles.detailValue}>{currentTournament.Status}</Text>
+            <View style={styles.detailValueWithIndicator}>
+              <Text style={styles.detailValue}>{tournamentWithStatus.Status}</Text>
+              <TournamentStatusIndicator
+                tournament={tournamentWithStatus}
+                isRecentlyChanged={statusEvents.length > 0}
+                subscriptionActive={statusSubscriptionActive}
+              />
+            </View>
           </View>
         )}
         
@@ -827,6 +889,77 @@ const TournamentDetail: React.FC<TournamentDetailProps> = ({ tournament, onBack 
         )}
       </View>
 
+      {/* Real-time Status Information */}
+      {(statusSubscriptionActive || scheduleChanges || courtChanges.length > 0 || tournamentProgress) && (
+        <View style={styles.realtimeStatusSection}>
+          <Text style={styles.sectionTitle}>Real-time Status</Text>
+          
+          {/* Subscription status */}
+          {statusSubscriptionActive && (
+            <View style={styles.realtimeIndicator}>
+              <Text style={styles.realtimeIndicatorText}>
+                📡 Real-time updates active
+              </Text>
+              {statusLastUpdate && (
+                <Text style={styles.realtimeLastUpdate}>
+                  Last update: {statusLastUpdate.toLocaleTimeString()}
+                </Text>
+              )}
+            </View>
+          )}
+          
+          {/* Schedule changes */}
+          {scheduleChanges && scheduleChanges.changeCount > 0 && (
+            <View style={styles.realtimeCard}>
+              <ScheduleChangeIndicator
+                scheduleChanges={scheduleChanges}
+                onIndicatorPress={() => setScheduleChangesVisible(true)}
+              />
+            </View>
+          )}
+          
+          {/* Court assignment changes */}
+          {courtChanges.length > 0 && (
+            <View style={styles.realtimeCard}>
+              <CourtAssignmentIndicator
+                courtChanges={courtChanges}
+                onIndicatorPress={() => setCourtChangesVisible(true)}
+              />
+            </View>
+          )}
+          
+          {/* Tournament progress */}
+          {tournamentProgress && (
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Progress:</Text>
+              <Text style={styles.detailValue}>
+                {tournamentProgress.completionPercentage}% 
+                ({tournamentProgress.completedMatches}/{tournamentProgress.totalMatches} matches)
+              </Text>
+            </View>
+          )}
+          
+          {/* Clear recent changes button */}
+          {(recentScheduleChanges.size > 0 || recentCourtChanges.size > 0) && (
+            <TouchableOpacity 
+              style={styles.clearChangesButton}
+              onPress={clearRecentChanges}
+            >
+              <Text style={styles.clearChangesButtonText}>
+                Clear Recent Change Indicators
+              </Text>
+            </TouchableOpacity>
+          )}
+          
+          {/* Status error */}
+          {statusError && (
+            <Text style={styles.statusErrorText}>
+              ⚠️ {statusError}
+            </Text>
+          )}
+        </View>
+      )}
+
       {/* Placeholder for future features */}
       <View style={styles.placeholderSection}>
         <Text style={styles.placeholderTitle}>Coming Soon</Text>
@@ -847,7 +980,22 @@ const TournamentDetail: React.FC<TournamentDetailProps> = ({ tournament, onBack 
         <TouchableOpacity style={styles.backButton} onPress={onBack}>
           <Text style={styles.backButtonText}>← Back</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Tournament Details</Text>
+        <View style={styles.headerTitleContainer}>
+          <Text style={styles.headerTitle}>Tournament Details</Text>
+          <View style={styles.headerActions}>
+            <CompactConnectionIndicator 
+              connectionState={connectionState}
+              hasLiveMatches={hasLiveMatches}
+            />
+            <CompactRefreshButton
+              onRefresh={refreshMatches}
+              connectionState={connectionState}
+            />
+            <PerformanceIndicator
+              onPress={() => setPerformanceDashboardVisible(true)}
+            />
+          </View>
+        </View>
       </View>
 
       {/* Main Scrollable Area */}
@@ -883,6 +1031,12 @@ const TournamentDetail: React.FC<TournamentDetailProps> = ({ tournament, onBack 
         </View>
       </ScrollView>
 
+      {/* Performance Dashboard Modal */}
+      <PerformanceDashboard
+        visible={performanceDashboardVisible}
+        onClose={() => setPerformanceDashboardVisible(false)}
+      />
+
       {/* Court Filter Modal */}
       <DropdownModal
         visible={courtDropdownOpen}
@@ -912,6 +1066,50 @@ const TournamentDetail: React.FC<TournamentDetailProps> = ({ tournament, onBack 
         onSelect={setSelectedGender}
         title="Select Gender"
       />
+
+      {/* Schedule Changes Detail Modal */}
+      <Modal
+        visible={scheduleChangesVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setScheduleChangesVisible(false)}
+      >
+        <TouchableOpacity 
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setScheduleChangesVisible(false)}
+        >
+          <TouchableOpacity activeOpacity={1} onPress={() => {}}>
+            {scheduleChanges && (
+              <ScheduleChangesDetail
+                scheduleChanges={scheduleChanges}
+                onClose={() => setScheduleChangesVisible(false)}
+              />
+            )}
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Court Changes Detail Modal */}
+      <Modal
+        visible={courtChangesVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setCourtChangesVisible(false)}
+      >
+        <TouchableOpacity 
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setCourtChangesVisible(false)}
+        >
+          <TouchableOpacity activeOpacity={1} onPress={() => {}}>
+            <CourtChangesDetail
+              courtChanges={courtChanges}
+              onClose={() => setCourtChangesVisible(false)}
+            />
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 };
@@ -939,10 +1137,20 @@ const styles = StyleSheet.create({
     color: '#0066cc',
     fontWeight: '500',
   },
+  headerTitleContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   headerTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#333',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   scrollView: {
     flex: 1,
@@ -1514,6 +1722,73 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666',
     fontWeight: '600',
+  },
+  // Real-time status styles
+  changeIndicators: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
+  },
+  detailValueWithIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  realtimeStatusSection: {
+    marginTop: 20,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 16,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.22,
+    shadowRadius: 2.22,
+    elevation: 3,
+  },
+  realtimeIndicator: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#e8f5e8',
+    borderRadius: 6,
+    marginBottom: 12,
+  },
+  realtimeIndicatorText: {
+    fontSize: 12,
+    color: '#4caf50',
+    fontWeight: '600',
+  },
+  realtimeLastUpdate: {
+    fontSize: 10,
+    color: '#666',
+    marginTop: 2,
+  },
+  realtimeCard: {
+    marginBottom: 8,
+  },
+  clearChangesButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#ff9800',
+    borderRadius: 6,
+    marginTop: 12,
+  },
+  clearChangesButtonText: {
+    fontSize: 12,
+    color: 'white',
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  statusErrorText: {
+    fontSize: 12,
+    color: '#f44336',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    marginTop: 8,
   },
 });
 

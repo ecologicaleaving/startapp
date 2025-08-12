@@ -1,0 +1,363 @@
+# Brownfield Architecture Document: Multi-Tier Caching System Integration
+# Tournament App Enhancement with PostgreSQL/Supabase Caching Layer
+
+metadata:
+  document_version: "1.0"
+  created_date: "2025-01-08"
+  project_name: "StartApp Tournament Caching Integration"
+  architecture_type: "brownfield_integration"
+  integration_scope: "data_layer_enhancement"
+  
+project_overview:
+  description: |
+    Integration of a sophisticated multi-tier caching system into an existing React Native
+    tournament application. The enhancement adds PostgreSQL-based caching via Supabase,
+    background synchronization jobs, and real-time capabilities while preserving all
+    existing functionality and maintaining backward compatibility.
+  
+  business_drivers:
+    - reduce_api_calls: "Minimize direct FIVB VIS API requests to improve performance and reliability"
+    - improve_responsiveness: "Provide instant data access through local caching"
+    - enable_real_time: "Support live match score updates and tournament status changes"
+    - reduce_costs: "Lower API usage costs through intelligent caching strategies"
+    - offline_capability: "Enable basic functionality during network interruptions"
+
+existing_system_analysis:
+  current_architecture:
+    platform: "React Native with Expo Router"
+    navigation: "File-based routing (/app directory)"
+    language: "TypeScript throughout"
+    state_management: "React hooks and local component state"
+    ui_framework: "React Native core components with custom styling"
+    
+  current_data_flow:
+    api_integration:
+      service_class: "VisApiService"
+      base_url: "https://www.fivb.org/Vis2009/XmlRequest.asmx"
+      authentication: "X-FIVB-App-ID header"
+      data_format: "XML responses parsed to TypeScript interfaces"
+      
+    data_entities:
+      tournaments:
+        interface: "Tournament"
+        fields: ["No", "Name", "Code", "StartDate", "EndDate", "Location", "Status"]
+        source: "GetBeachTournamentList API endpoint"
+        
+      matches:
+        interface: "BeachMatch"
+        fields: ["No", "TeamAName", "TeamBName", "LocalDate", "LocalTime", "Status", "Court"]
+        source: "GetBeachMatchList API endpoint"
+        
+    current_components:
+      tournament_list:
+        path: "/components/TournamentList.tsx"
+        functionality: ["Display active tournaments", "Filter by type (FIVB/CEV/BPT)", "Navigation to details"]
+        data_loading: "Direct API calls via VisApiService"
+        
+      tournament_detail:
+        path: "/components/TournamentDetail.tsx"
+        functionality: ["Show tournament matches", "Match scheduling display"]
+        data_loading: "Direct API calls for match data"
+
+  existing_strengths:
+    - well_structured_types: "Comprehensive TypeScript interfaces for all data entities"
+    - modular_services: "Clean separation of API logic in VisApiService class"
+    - component_architecture: "Reusable components with clear responsibilities"
+    - error_handling: "Proper error states and loading indicators"
+    - filtering_capability: "Tournament type classification and filtering"
+    
+  current_limitations:
+    - direct_api_dependency: "Every data request hits external FIVB API directly"
+    - no_caching: "Repeated requests for same data cause unnecessary API calls"
+    - no_offline_support: "Complete dependency on network connectivity"
+    - no_real_time: "Manual refresh required for live score updates"
+    - performance_bottlenecks: "Slow initial loading due to API latency"
+
+proposed_enhancement:
+  integration_strategy: "additive_non_breaking"
+  
+  new_architecture_components:
+    supabase_backend:
+      database:
+        platform: "PostgreSQL on Supabase"
+        tables:
+          tournaments:
+            fields: ["id", "no", "code", "name", "start_date", "end_date", "status", "last_synced", "version"]
+            indexes: ["code", "start_date", "status"]
+            
+          matches:
+            fields: ["id", "no", "tournament_no", "team_a_name", "team_b_name", "local_date", "local_time", "status", "points_a", "points_b", "last_synced"]
+            indexes: ["tournament_no", "local_date", "status"]
+            
+          sync_status:
+            fields: ["entity_type", "last_sync", "sync_frequency", "error_count", "last_error"]
+            
+      edge_functions:
+        tournament_sync:
+          frequency: "daily"
+          responsibility: "Sync tournament master data from FIVB API"
+          
+        match_schedule_sync:
+          frequency: "15 minutes"
+          responsibility: "Update match schedules and basic match info"
+          
+        live_score_sync:
+          frequency: "30 seconds"
+          responsibility: "Update live match scores during active tournaments"
+          
+      real_time_subscriptions:
+        live_matches: "WebSocket subscriptions for active match score updates"
+        tournament_status: "Real-time tournament status change notifications"
+        
+    client_cache_layer:
+      service_class: "CacheService"
+      responsibilities:
+        - "Intelligent fallback between Supabase cache and direct API"
+        - "Local storage for offline capability"
+        - "Real-time subscription management"
+        - "Cache invalidation and refresh strategies"
+        
+      storage_tiers:
+        tier_1_memory: "In-memory cache for active session data"
+        tier_2_local: "AsyncStorage for offline persistence"
+        tier_3_supabase: "PostgreSQL cache with real-time sync"
+        tier_4_api: "Direct FIVB API as ultimate fallback"
+
+integration_approach:
+  compatibility_preservation:
+    existing_interfaces:
+      maintain_api: "Keep all existing VisApiService methods unchanged"
+      extend_functionality: "Add caching capabilities without breaking existing calls"
+      
+    component_compatibility:
+      zero_changes_required: "Existing components continue working without modification"
+      transparent_enhancement: "Caching improvements happen at service layer"
+      
+  implementation_phases:
+    phase_1_foundation:
+      tasks:
+        - setup_supabase: "Configure PostgreSQL database and authentication"
+        - create_tables: "Set up tournaments, matches, and sync_status tables"
+        - implement_cache_service: "Create CacheService class with fallback logic"
+        
+    phase_2_background_sync:
+      tasks:
+        - tournament_edge_function: "Daily tournament master data synchronization"
+        - match_schedule_function: "15-minute match schedule updates"
+        - sync_monitoring: "Error handling and sync status tracking"
+        
+    phase_3_integration:
+      tasks:
+        - enhance_vis_service: "Add caching layer to existing VisApiService methods"
+        - implement_fallback: "Intelligent degradation to direct API when cache fails"
+        - offline_support: "Local storage fallback for network interruptions"
+        
+    phase_4_real_time:
+      tasks:
+        - live_score_sync: "30-second live match score updates"
+        - websocket_subscriptions: "Real-time updates for active matches"
+        - ui_real_time_updates: "Automatic UI refresh for live data changes"
+
+technical_specifications:
+  data_synchronization:
+    sync_frequencies:
+      tournaments:
+        frequency: "daily"
+        trigger: "Scheduled Edge Function at 00:00 UTC"
+        rationale: "Tournament master data changes infrequently"
+        
+      match_schedules:
+        frequency: "15 minutes"
+        trigger: "Scheduled Edge Function every :00, :15, :30, :45"
+        rationale: "Match times and courts may change during events"
+        
+      live_scores:
+        frequency: "30 seconds"
+        trigger: "Scheduled Edge Function during active tournament hours"
+        rationale: "Real-time score updates during live matches"
+        
+  caching_strategies:
+    tournament_data:
+      ttl: "24 hours"
+      invalidation: "On sync completion or manual refresh"
+      fallback: "Direct API if cache miss or expired"
+      
+    match_data:
+      ttl: "15 minutes for future matches, 30 seconds for live matches"
+      invalidation: "Real-time updates via WebSocket subscriptions"
+      fallback: "Direct API with exponential backoff"
+      
+  error_handling:
+    api_fallback:
+      condition: "Supabase unavailable or sync failure"
+      action: "Seamless fallback to direct FIVB API calls"
+      user_experience: "Transparent - no difference in functionality"
+      
+    offline_support:
+      local_cache: "AsyncStorage with last successful data fetch"
+      user_notification: "Clear indication of offline mode and data freshness"
+      auto_recovery: "Automatic sync when network connectivity restored"
+
+service_integration_details:
+  enhanced_vis_service:
+    method_enhancements:
+      getTournamentListWithDetails:
+        current_behavior: "Direct API call to FIVB GetBeachTournamentList"
+        enhanced_behavior: |
+          1. Check Supabase cache for recent tournament data
+          2. Return cached data if fresh (< 24 hours)
+          3. Fall back to direct API if cache miss or stale
+          4. Update cache with fresh API data for future requests
+          
+      getBeachMatchList:
+        current_behavior: "Direct API call to FIVB GetBeachMatchList"
+        enhanced_behavior: |
+          1. Check Supabase cache for tournament matches
+          2. Return cached data if fresh (< 15 minutes for scheduled, < 30 seconds for live)
+          3. Subscribe to real-time updates if matches are currently active
+          4. Fall back to direct API if cache unavailable
+          
+    new_methods:
+      getCachedTournaments: "Direct access to cached tournament data"
+      subscribeLiveMatches: "Real-time match score subscriptions"
+      getCacheStatus: "Cache freshness and sync status information"
+      refreshCache: "Manual cache refresh for specific tournament/match data"
+
+deployment_considerations:
+  environment_setup:
+    supabase_configuration:
+      database: "PostgreSQL with Row Level Security enabled"
+      authentication: "Service role for Edge Functions, anon key for client"
+      real_time: "Enable real-time subscriptions for tournaments and matches tables"
+      
+    edge_functions:
+      runtime: "Deno with TypeScript support"
+      secrets: "FIVB API key stored in Supabase vault"
+      scheduling: "Cron-based triggers for sync functions"
+      
+  client_configuration:
+    dependencies:
+      new_packages: ["@supabase/supabase-js", "@react-native-async-storage/async-storage"]
+      version_compatibility: "Ensure React Native 0.79.5 compatibility"
+      
+    environment_variables:
+      supabase_url: "Project URL from Supabase dashboard"
+      supabase_anon_key: "Anonymous public key for client operations"
+
+testing_strategy:
+  integration_testing:
+    cache_fallback:
+      scenarios:
+        - "Supabase available, cache hit"
+        - "Supabase available, cache miss"
+        - "Supabase unavailable, API fallback"
+        - "Network offline, local cache fallback"
+        
+    data_consistency:
+      validation:
+        - "Cached data matches API data structure"
+        - "Real-time updates reflect in UI immediately"
+        - "Sync functions handle API errors gracefully"
+        
+  performance_testing:
+    metrics:
+      initial_load: "Measure improvement in tournament list loading time"
+      api_calls: "Count reduction in direct FIVB API requests"
+      real_time_latency: "Measure delay in live score updates"
+      
+  backward_compatibility:
+    existing_functionality:
+      tournament_list: "Verify all filtering and display functionality unchanged"
+      tournament_detail: "Confirm match data display works identically"
+      error_handling: "Ensure error states continue to work properly"
+
+risk_mitigation:
+  technical_risks:
+    api_dependency:
+      risk: "FIVB API changes breaking synchronization"
+      mitigation: "Robust error handling and graceful degradation to direct API"
+      
+    supabase_downtime:
+      risk: "Cache layer unavailable affecting user experience"
+      mitigation: "Transparent fallback to direct API calls"
+      
+    data_consistency:
+      risk: "Cache and live API data becoming inconsistent"
+      mitigation: "TTL-based invalidation and manual refresh capabilities"
+      
+  operational_risks:
+    sync_function_failure:
+      risk: "Background sync jobs failing silently"
+      mitigation: "Comprehensive logging and monitoring in sync_status table"
+      
+    edge_function_limits:
+      risk: "Supabase Edge Function execution limits during high-volume tournaments"
+      mitigation: "Efficient batch processing and rate limiting"
+
+monitoring_and_maintenance:
+  performance_metrics:
+    cache_hit_ratio: "Percentage of requests served from cache vs. direct API"
+    api_call_reduction: "Reduction in direct FIVB API calls per user session"
+    response_times: "Average response time improvement for tournament/match data"
+    
+  operational_metrics:
+    sync_success_rate: "Percentage of successful background sync operations"
+    error_rates: "Frequency of sync errors and API fallback usage"
+    real_time_latency: "Average delay in real-time score updates"
+    
+  alerting_strategy:
+    sync_failures: "Alert on consecutive sync job failures"
+    api_fallback_usage: "Monitor excessive fallback to direct API calls"
+    performance_degradation: "Alert on response time increases"
+
+success_criteria:
+  performance_improvements:
+    api_call_reduction: "70% reduction in direct FIVB API calls"
+    load_time_improvement: "50% faster initial tournament list loading"
+    real_time_capability: "Live score updates within 30 seconds"
+    
+  user_experience_enhancements:
+    transparent_integration: "Zero learning curve for existing functionality"
+    offline_capability: "Basic browsing available during network interruptions"
+    live_updates: "Automatic refresh of match scores during active tournaments"
+    
+  system_reliability:
+    fallback_effectiveness: "100% functionality preservation during cache failures"
+    data_consistency: "Cached data accuracy > 99.5%"
+    uptime_improvement: "Reduced dependency on external API availability"
+
+migration_timeline:
+  week_1_2:
+    setup_infrastructure: "Supabase project setup and database schema creation"
+    implement_cache_service: "Core CacheService class with fallback logic"
+    
+  week_3_4:
+    background_sync: "Edge Functions for tournament and match synchronization"
+    integration_testing: "Cache fallback and data consistency validation"
+    
+  week_5_6:
+    service_enhancement: "Integrate caching into existing VisApiService methods"
+    real_time_features: "WebSocket subscriptions and live updates"
+    
+  week_7_8:
+    performance_optimization: "Fine-tune cache TTL and sync frequencies"
+    production_deployment: "Gradual rollout with monitoring and fallback readiness"
+
+conclusion:
+  integration_benefits: |
+    This brownfield integration enhances the existing React Native tournament app
+    with sophisticated caching capabilities while maintaining full backward compatibility.
+    The multi-tier caching system dramatically reduces API calls, improves performance,
+    and enables real-time features without requiring changes to existing components.
+    
+  architectural_soundness: |
+    The proposed architecture follows brownfield best practices by preserving existing
+    interfaces, providing transparent enhancements, and maintaining graceful degradation
+    capabilities. The service layer abstraction ensures that caching improvements are
+    invisible to UI components while providing significant performance benefits.
+    
+  future_extensibility: |
+    The cache infrastructure provides a foundation for future enhancements including
+    advanced analytics, predictive caching, and expanded real-time features. The
+    modular design allows for additional data sources and caching strategies to be
+    integrated seamlessly.

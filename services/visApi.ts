@@ -92,13 +92,23 @@ export class VisApiService {
     tournamentType?: TournamentType;
   }): Promise<Tournament[]> {
     try {
+      console.log('VisApiService: getTournamentListWithDetails called with options:', filterOptions);
+      
       // Initialize cache service if not already done
+      console.log('VisApiService: Initializing CacheService...');
       CacheService.initialize();
+      console.log('VisApiService: CacheService initialized');
       
       // Monitor cache performance
+      console.log('VisApiService: Starting cache performance monitoring...');
       const performanceResult = await CachePerformanceMonitor.monitorCacheTierPerformance(
         'cache_service',
-        async () => CacheService.getTournaments(filterOptions)
+        async () => {
+          console.log('VisApiService: Calling CacheService.getTournaments...');
+          const result = await CacheService.getTournaments(filterOptions);
+          console.log('VisApiService: CacheService.getTournaments returned:', result.source, result.data.length, 'items');
+          return result;
+        }
       );
       
       if (performanceResult.result && performanceResult.result.data) {
@@ -151,11 +161,11 @@ export class VisApiService {
     tournamentType?: TournamentType;
   }): Promise<Tournament[]> {
     try {
-      // Use the proper VIS API call for active beach volleyball tournaments
-      const xmlRequest = "<Request Type='GetBeachTournamentList' Fields='No Code Name StartDate EndDate'><Filter Statuses='Running' /></Request>";
+      // Use the proper VIS API call for beach volleyball tournaments (all recent ones)
+      const xmlRequest = "<Request Type='GetBeachTournamentList' Fields='No Code Name StartDate EndDate' />";
       const requestUrl = `${VIS_BASE_URL}?Request=${encodeURIComponent(xmlRequest)}`;
       
-      console.log('Fetching currently running beach volleyball tournaments from direct API...');
+      console.log('Fetching recent beach volleyball tournaments from direct API...');
       
       // Add timeout to prevent hanging
       const controller = new AbortController();
@@ -217,7 +227,22 @@ export class VisApiService {
       });
       
       console.log(`Found ${allTournaments.length} running tournaments, ${sortedTournaments.length} within +/-1 month (sorted by date):`);
-      sortedTournaments.forEach(t => console.log(`- ${t.Name} (${t.Code}) - ${t.StartDate} to ${t.EndDate}`));
+      
+      // Debug tournament classification
+      const tournamentsByType = {
+        FIVB: 0,
+        BPT: 0,
+        CEV: 0,
+        LOCAL: 0
+      };
+      
+      sortedTournaments.forEach(t => {
+        const type = this.classifyTournament(t);
+        tournamentsByType[type]++;
+        console.log(`- ${t.Name} (${t.Code}) - ${t.StartDate} to ${t.EndDate} [${type}]`);
+      });
+      
+      console.log('Tournament breakdown by type:', tournamentsByType);
       
       // Apply tournament type filtering if specified
       if (filterOptions?.tournamentType && filterOptions.tournamentType !== 'ALL') {
@@ -265,9 +290,12 @@ export class VisApiService {
   }
 
   static async getBeachMatchList(tournamentNo: string): Promise<BeachMatch[]> {
+    console.log(`VisApiService: getBeachMatchList called for tournament ${tournamentNo}`);
+    
     try {
       // Initialize cache service if not already done
       CacheService.initialize();
+      console.log(`VisApiService: Cache service initialized, trying cache first`);
       
       // Monitor cache performance
       const performanceResult = await CachePerformanceMonitor.monitorCacheTierPerformance(
@@ -275,18 +303,28 @@ export class VisApiService {
         async () => CacheService.getMatches(tournamentNo)
       );
       
+      console.log(`VisApiService: Cache result:`, {
+        hasResult: !!performanceResult.result,
+        hasData: !!(performanceResult.result && performanceResult.result.data),
+        dataLength: performanceResult.result?.data?.length,
+        source: performanceResult.result?.source,
+        duration: performanceResult.duration
+      });
+      
       if (performanceResult.result && performanceResult.result.data) {
         console.log(
-          `Match data served from ${performanceResult.result.source} cache in ${performanceResult.duration.toFixed(2)}ms ` +
+          `VisApiService: Match data served from ${performanceResult.result.source} cache in ${performanceResult.duration.toFixed(2)}ms ` +
           `(performant: ${performanceResult.performant})`
         );
         
         // Log performance warning if cache is slow
         if (!performanceResult.performant) {
           console.warn(
-            `Cache performance warning: ${performanceResult.duration.toFixed(2)}ms exceeds ${performanceResult.threshold}ms threshold`
+            `VisApiService: Cache performance warning: ${performanceResult.duration.toFixed(2)}ms exceeds ${performanceResult.threshold}ms threshold`
           );
         }
+        
+        console.log(`VisApiService: Returning ${performanceResult.result.data.length} matches from ${performanceResult.result.source} cache`);
         
         // Check for live matches and establish real-time subscriptions
         await this.handleLiveMatchSubscriptions(performanceResult.result.data);
@@ -295,23 +333,25 @@ export class VisApiService {
       }
 
       // If cache fails, fallback to direct API (should not happen as CacheService handles this)
-      console.warn('Cache service failed, falling back to direct API');
-      return await this.fetchMatchesDirectFromAPI(tournamentNo);
+      console.warn('VisApiService: Cache service failed, falling back to direct API');
+      const directMatches = await this.fetchMatchesDirectFromAPI(tournamentNo);
+      console.log(`VisApiService: Direct API fallback returned ${directMatches.length} matches`);
+      return directMatches;
     } catch (error) {
-      console.error(`Error in getBeachMatchList for tournament ${tournamentNo}:`, error);
+      console.error(`VisApiService: Error in getBeachMatchList for tournament ${tournamentNo}:`, error);
       
       // Final fallback to direct API with performance monitoring
       try {
-        console.log('Attempting direct API fallback after cache error');
+        console.log('VisApiService: Attempting direct API fallback after cache error');
         const apiResult = await CachePerformanceMonitor.monitorCacheTierPerformance(
           'api',
           async () => this.fetchMatchesDirectFromAPI(tournamentNo)
         );
         
-        console.log(`Direct API fallback completed in ${apiResult.duration.toFixed(2)}ms`);
+        console.log(`VisApiService: Direct API fallback completed in ${apiResult.duration.toFixed(2)}ms with ${apiResult.result.length} matches`);
         return apiResult.result;
       } catch (fallbackError) {
-        console.error('Direct API fallback also failed:', fallbackError);
+        console.error('VisApiService: Direct API fallback also failed:', fallbackError);
         throw new Error('Failed to fetch tournament matches');
       }
     }
@@ -343,10 +383,15 @@ export class VisApiService {
       }
 
       const xmlText = await response.text();
+      console.log(`VisApiService: fetchMatchesDirectFromAPI got XML response length: ${xmlText.length}`);
+      
       const matches = this.parseBeachMatchList(xmlText);
       
-      console.log(`Found ${matches.length} matches for tournament ${tournamentNo}`);
-      matches.forEach(m => console.log(`- Match ${m.NoInTournament}: ${m.TeamAName} vs ${m.TeamBName} on ${m.LocalDate} at ${m.LocalTime}`));
+      console.log(`VisApiService: fetchMatchesDirectFromAPI parsed ${matches.length} matches for tournament ${tournamentNo}`);
+      if (matches.length > 0) {
+        console.log(`VisApiService: Sample matches:`);
+        matches.slice(0, 3).forEach(m => console.log(`- Match ${m.NoInTournament}: ${m.TeamAName} vs ${m.TeamBName} on ${m.LocalDate} at ${m.LocalTime}`));
+      }
       
       return matches;
     } catch (error) {
@@ -384,14 +429,19 @@ export class VisApiService {
 
   private static parseBeachMatchList(xmlText: string): BeachMatch[] {
     try {
+      console.log(`VisApiService: parseBeachMatchList called with XML length: ${xmlText.length}`);
+      console.log('VisApiService: XML preview:', xmlText.substring(0, 300));
+      
       // Parse the BeachMatches XML format
       const matchMatches = xmlText.match(/<BeachMatch[^>]*\/>/g);
+      console.log(`VisApiService: Regex found ${matchMatches ? matchMatches.length : 0} BeachMatch tags`);
       
       if (!matchMatches) {
+        console.log('VisApiService: No match tags found, returning empty array');
         return [];
       }
 
-      return matchMatches.map((match) => {
+      const parsedMatches = matchMatches.map((match) => {
         const extractAttribute = (name: string): string | undefined => {
           const attrMatch = match.match(new RegExp(`${name}="([^"]*)"`, 'i'));
           return attrMatch ? attrMatch[1] : undefined;
@@ -429,8 +479,15 @@ export class VisApiService {
         
         return beachMatch;
       });
+      
+      console.log(`VisApiService: Successfully parsed ${parsedMatches.length} matches`);
+      if (parsedMatches.length > 0) {
+        console.log('VisApiService: Sample parsed match:', JSON.stringify(parsedMatches[0], null, 2));
+      }
+      
+      return parsedMatches;
     } catch (error) {
-      console.error('Error parsing BeachMatches XML:', error);
+      console.error('VisApiService: Error parsing BeachMatches XML:', error);
       return [];
     }
   }
