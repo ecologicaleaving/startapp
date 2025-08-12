@@ -21,8 +21,9 @@ import PerformanceDashboard, { PerformanceIndicator } from './PerformanceDashboa
 import TournamentStatusIndicator from './tournament/TournamentStatusIndicator';
 import ScheduleChangeIndicator, { ScheduleChangesDetail } from './tournament/ScheduleChangeIndicator';
 import CourtAssignmentIndicator, { CourtChangesDetail } from './tournament/CourtAssignmentIndicator';
-import { StatusBadge, StatusCard, StatusIcon } from './Status';
-import { getStatusColor, getStatusColorWithText, determineTournamentStatus, determineMatchStatus } from '../utils/statusColors';
+import { StatusBadge, StatusCard } from './Status';
+import { getStatusColorWithText, determineTournamentStatus, determineMatchStatus } from '../utils/statusColors';
+import { NavigationIcons, UtilityIcons, DataIcons, CommunicationIcons } from './Icons/IconLibrary';
 
 interface TournamentDetailProps {
   tournament: Tournament;
@@ -89,7 +90,10 @@ const DropdownModal: React.FC<DropdownModalProps> = ({
                 showsVerticalScrollIndicator={true}
               />
               <TouchableOpacity style={styles.modalCloseButton} onPress={onClose}>
-                <BodyText style={styles.modalCloseText}>Close</BodyText>
+                <View style={styles.modalCloseContent}>
+                  <NavigationIcons.Back size="small" theme="default" colorKey="primary" />
+                  <BodyText style={styles.modalCloseText}>Close</BodyText>
+                </View>
               </TouchableOpacity>
             </View>
           </TouchableOpacity>
@@ -812,7 +816,9 @@ const TournamentDetail: React.FC<TournamentDetailProps> = ({ tournament, onBack 
       <View style={styles.infoCards}>
         {/* Location Card */}
         <View style={styles.infoCard}>
-          <Text style={styles.cardIcon}>📍</Text>
+          <View style={styles.cardIconContainer}>
+            <DataIcons.Details size="medium" theme="default" colorKey="secondary" />
+          </View>
           <View style={styles.cardContent}>
             <Text style={styles.cardLabel}>Location</Text>
             <Text style={styles.cardValue}>{getLocation()}</Text>
@@ -821,7 +827,9 @@ const TournamentDetail: React.FC<TournamentDetailProps> = ({ tournament, onBack 
 
         {/* Dates Card */}
         <View style={styles.infoCard}>
-          <Text style={styles.cardIcon}>📅</Text>
+          <View style={styles.cardIconContainer}>
+            <UtilityIcons.Info size="medium" theme="default" colorKey="secondary" />
+          </View>
           <View style={styles.cardContent}>
             <Text style={styles.cardLabel}>Tournament Dates</Text>
             <Text style={styles.cardValue}>{getDateRange()}</Text>
@@ -831,7 +839,9 @@ const TournamentDetail: React.FC<TournamentDetailProps> = ({ tournament, onBack 
         {/* Tournament Code Card */}
         {currentTournament.Code && (
           <View style={styles.infoCard}>
-            <Text style={styles.cardIcon}>🏷️</Text>
+            <View style={styles.cardIconContainer}>
+              <DataIcons.Details size="medium" theme="default" colorKey="secondary" />
+            </View>
             <View style={styles.cardContent}>
               <Text style={styles.cardLabel}>Tournament Code</Text>
               <Text style={styles.cardValueMono}>{currentTournament.Code}</Text>
@@ -841,7 +851,9 @@ const TournamentDetail: React.FC<TournamentDetailProps> = ({ tournament, onBack 
 
         {/* Tournament Number Card */}
         <View style={styles.infoCard}>
-          <Text style={styles.cardIcon}>#️⃣</Text>
+          <View style={styles.cardIconContainer}>
+            <DataIcons.Stats size="medium" theme="default" colorKey="secondary" />
+          </View>
           <View style={styles.cardContent}>
             <Text style={styles.cardLabel}>Tournament Number</Text>
             <Text style={styles.cardValueMono}>#{currentTournament.No}</Text>
@@ -860,7 +872,7 @@ const TournamentDetail: React.FC<TournamentDetailProps> = ({ tournament, onBack 
               <StatusCard
                 status={determineTournamentStatus(tournamentWithStatus)}
                 title={tournamentWithStatus.Status}
-                variant=\"compact\"
+                variant="compact"
                 showIcon={true}
                 style={styles.tournamentStatusCard}
               />
@@ -959,9 +971,12 @@ const TournamentDetail: React.FC<TournamentDetailProps> = ({ tournament, onBack 
           
           {/* Status error */}
           {statusError && (
-            <Text style={styles.statusErrorText}>
-              ⚠️ {statusError}
-            </Text>
+            <View style={styles.statusErrorRow}>
+              <CommunicationIcons.Alert size="small" theme="highContrast" colorKey="accent" />
+              <Text style={styles.statusErrorText}>
+                {statusError}
+              </Text>
+            </View>
           )}
         </View>
       )}
@@ -1210,9 +1225,12 @@ const styles = StyleSheet.create({
     shadowRadius: 3.84,
     elevation: 5,
   },
-  cardIcon: {
-    fontSize: 24,
+  cardIconContainer: {
+    width: 40,
+    height: 40,
     marginRight: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   cardContent: {
     flex: 1,
@@ -1724,6 +1742,11 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
   },
+  modalCloseContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   modalCloseText: {
     fontSize: 16,
     color: '#666',
@@ -1789,12 +1812,19 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
   },
+  statusErrorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 8,
+  },
   statusErrorText: {
     fontSize: 12,
     color: '#f44336',
     fontStyle: 'italic',
     textAlign: 'center',
-    marginTop: 8,
+    marginTop: 0,
   },
   // Status component styles
   matchStatusBadge: {

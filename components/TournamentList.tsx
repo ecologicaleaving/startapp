@@ -7,7 +7,7 @@ import {
   Alert,
   TouchableOpacity,
 } from 'react-native';
-import { Text, H1Text, H2Text, BodyText, CaptionText } from './Typography';
+import { H1Text, H2Text, BodyText, CaptionText } from './Typography';
 import { Tournament } from '../types/tournament';
 import { TournamentType } from '../services/visApi';
 import { testSupabaseConnection } from '../services/supabase';
@@ -24,8 +24,9 @@ import { StorageAlert, StorageStatusIndicator } from './StorageAlert';
 import { useStorageMonitoring } from '../hooks/useStorageManager';
 import { CompactTournamentStatusIndicator, TournamentStatusLegend } from './tournament/TournamentStatusIndicator';
 import MinimalTournamentDetail from './MinimalTournamentDetail';
-import { StatusBadge, StatusCard } from './Status';
-import { getStatusColor, getStatusColorWithText, determineTournamentStatus } from '../utils/statusColors';
+import { StatusBadge } from './Status';
+import { getStatusColorWithText, determineTournamentStatus } from '../utils/statusColors';
+import { ActionIcons, UtilityIcons, DataIcons, CommunicationIcons } from './Icons/IconLibrary';
 
 interface TournamentItemProps {
   tournament: Tournament;
@@ -118,11 +119,17 @@ const TournamentItem: React.FC<TournamentItemProps> = ({
       </H2Text>
       
       {getLocation() && (
-        <BodyText style={styles.tournamentLocation}>📍 {getLocation()}</BodyText>
+        <View style={styles.locationRow}>
+          <DataIcons.Details size="small" theme="default" colorKey="secondary" />
+          <BodyText style={styles.tournamentLocation}>{getLocation()}</BodyText>
+        </View>
       )}
       
       {getDateRange() && (
-        <CaptionText style={styles.tournamentDate}>📅 {getDateRange()}</CaptionText>
+        <View style={styles.dateRow}>
+          <UtilityIcons.Info size="small" theme="default" colorKey="muted" />
+          <CaptionText style={styles.tournamentDate}>{getDateRange()}</CaptionText>
+        </View>
       )}
     </TouchableOpacity>
   );
@@ -296,16 +303,24 @@ const TournamentList: React.FC = () => {
         <TouchableOpacity 
           style={styles.retryButton} 
           onPress={loadTournaments}
+          accessibilityLabel="Retry loading tournaments"
         >
-          <BodyText style={styles.retryButtonText}>Try Again</BodyText>
+          <View style={styles.retryButtonContent}>
+            <ActionIcons.Refresh size="small" theme="default" colorKey="primary" />
+            <BodyText style={styles.retryButtonText}>Try Again</BodyText>
+          </View>
         </TouchableOpacity>
         
         {isConnected && (
           <TouchableOpacity 
             style={[styles.retryButton, styles.forceSyncButton]} 
             onPress={() => forceSyncNow().catch(console.error)}
+            accessibilityLabel="Force synchronization"
           >
-            <BodyText style={styles.retryButtonText}>Force Sync</BodyText>
+            <View style={styles.retryButtonContent}>
+              <ActionIcons.Refresh size="small" theme="default" colorKey="primary" />
+              <BodyText style={styles.retryButtonText}>Force Sync</BodyText>
+            </View>
           </TouchableOpacity>
         )}
       </View>
@@ -374,8 +389,15 @@ const TournamentList: React.FC = () => {
         <TouchableOpacity 
           style={styles.statusLegendButton}
           onPress={() => setShowStatusLegend(!showStatusLegend)}
+          accessibilityLabel="Show status legend"
+          accessibilityHint="Double tap to view tournament status explanations"
         >
-          <Text style={styles.statusLegendIcon}>ℹ️</Text>
+          <UtilityIcons.Info 
+            size="medium" 
+            theme="highContrast" 
+            colorKey="secondary"
+            isInteractive={true}
+          />
         </TouchableOpacity>
       </View>
       
@@ -392,9 +414,12 @@ const TournamentList: React.FC = () => {
         {/* Real-time status information */}
         {subscriptionActive && (
           <View style={styles.realtimeStatus}>
-            <CaptionText style={styles.realtimeStatusText}>
-              📡 Real-time updates active
-            </CaptionText>
+            <View style={styles.realtimeStatusRow}>
+              <CommunicationIcons.Notification size="small" theme="default" colorKey="accent" />
+              <CaptionText style={styles.realtimeStatusText}>
+                Real-time updates active
+              </CaptionText>
+            </View>
             {recentlyChangedTournaments.size > 0 && (
               <TouchableOpacity 
                 style={styles.clearChangesButton}
@@ -409,9 +434,12 @@ const TournamentList: React.FC = () => {
         )}
         
         {statusError && (
-          <CaptionText style={styles.statusError}>
-            ⚠️ Status subscription error: {statusError}
-          </CaptionText>
+          <View style={styles.statusErrorRow}>
+            <CommunicationIcons.Alert size="small" theme="highContrast" colorKey="accent" />
+            <CaptionText style={styles.statusError}>
+              Status subscription error: {statusError}
+            </CaptionText>
+          </View>
         )}
         
         {statusLastUpdate && (
@@ -449,12 +477,15 @@ const TournamentList: React.FC = () => {
       
       {supabaseConnected !== null && (
         <View style={styles.connectionStatus}>
-          <CaptionText style={[
-            styles.connectionText,
-            supabaseConnected ? styles.connectedText : styles.disconnectedText
-          ]}>
-            🗄️ Supabase: {supabaseConnected ? 'Connected' : 'Disconnected'}
-          </CaptionText>
+          <View style={styles.connectionRow}>
+            <DataIcons.Stats size="small" theme="default" colorKey="secondary" />
+            <CaptionText style={[
+              styles.connectionText,
+              supabaseConnected ? styles.connectedText : styles.disconnectedText
+            ]}>
+              Supabase: {supabaseConnected ? 'Connected' : 'Disconnected'}
+            </CaptionText>
+          </View>
         </View>
       )}
       
@@ -509,8 +540,6 @@ const styles = StyleSheet.create({
     marginLeft: 12,
     padding: 4,
   },
-  statusLegendIcon: {
-  },
   subtitleContainer: {
     marginBottom: 20,
   },
@@ -526,6 +555,11 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 4,
   },
+  realtimeStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   realtimeStatusText: {
     color: '#4caf50',
     fontWeight: '600',
@@ -540,10 +574,17 @@ const styles = StyleSheet.create({
     color: 'white',
     fontWeight: '600',
   },
+  statusErrorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
   statusError: {
     color: '#f44336',
     textAlign: 'center',
-    marginBottom: 4,
+    marginBottom: 0,
   },
   statusLastUpdate: {
     color: '#999',
@@ -615,9 +656,20 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 4,
   },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 2,
+    gap: 6,
+  },
   tournamentLocation: {
     color: '#666',
-    marginBottom: 2,
+    marginBottom: 0,
+  },
+  dateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   tournamentDate: {
     color: '#999',
@@ -651,6 +703,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 16,
   },
+  connectionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   connectionText: {
     fontWeight: '500',
   },
@@ -679,6 +736,11 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     backgroundColor: '#0066cc',
     borderRadius: 8,
+  },
+  retryButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   retryButtonText: {
     color: '#fff',

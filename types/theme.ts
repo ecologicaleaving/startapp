@@ -63,9 +63,35 @@ export interface StatusColors {
   emergency: string;    // Emergency/Urgent states (Maximum visibility)
 }
 
+// Icon system configuration for outdoor visibility
+export interface IconTokens {
+  sizes: {
+    small: number;    // 24px - Non-interactive icons
+    medium: number;   // 32px - Semi-interactive icons
+    large: number;    // 44px - Interactive icons (touch target compliant)
+  };
+  strokeWidths: {
+    small: number;    // Stroke width for small outlined icons
+    medium: number;   // Stroke width for medium outlined icons
+    large: number;    // Stroke width for large outlined icons
+  };
+  colors: {
+    primary: string;      // Primary icon color
+    secondary: string;    // Secondary icon color
+    accent: string;       // Accent icon color
+    muted: string;        // Muted/disabled icon color
+    emergency: string;    // Emergency state icon color
+  };
+  accessibility: {
+    minimumContrastRatio: number;  // WCAG AAA requirement (7:1)
+    minimumTouchTarget: number;    // Minimum interactive icon size (44px)
+  };
+}
+
 export interface DesignTokens {
   colors: ColorToken;
   statusColors: StatusColors;
+  iconTokens: IconTokens;
   typography: TypographyScale;
   spacing: SpacingToken;
   contrast: ContrastValidation;

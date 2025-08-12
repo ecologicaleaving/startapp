@@ -31,6 +31,6 @@ module.exports = {
   ],
   testPathIgnorePatterns: [
     '/node_modules/',
-    '/__tests__/.*\\.tsx$' // Skip tsx test files for now
+    '/__tests__/.*\\.tsx$' // Skip tsx test files for now due to React Native setup complexity
   ],
 };
