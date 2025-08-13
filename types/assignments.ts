@@ -9,16 +9,23 @@ export type AssignmentStatus = 'current' | 'upcoming' | 'completed' | 'cancelled
 
 export interface Assignment {
   id: string;
-  matchId: string;
-  courtNumber: string;
+  matchId?: string;
+  courtNumber: number;
   homeTeam: string;
   awayTeam: string;
   matchTime: Date;
-  refereePosition: RefereePosition;
+  refereePosition: string;
   status: AssignmentStatus;
+  matchType?: string;
+  importance?: 'low' | 'medium' | 'high';
   tournamentName?: string;
   matchResult?: string;
   notes?: string;
+  tournamentInfo?: {
+    name: string;
+    location: string;
+    court: string;
+  };
 }
 
 export interface AssignmentCardProps {

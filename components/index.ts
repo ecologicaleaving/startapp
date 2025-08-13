@@ -23,3 +23,6 @@ export * from './Status';
 
 // Touch Target Components (Story 2.5)
 export * from './TouchTarget';
+
+// Dashboard Components (Story 3.1)
+export * from './Dashboard';
