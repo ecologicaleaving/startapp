@@ -192,6 +192,7 @@ export const contrast = {
 // Complete Design Token Export
 export const designTokens: DesignTokens = {
   colors,
+  brandColors,
   statusColors,
   iconTokens,
   typography,

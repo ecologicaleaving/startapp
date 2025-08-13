@@ -3,6 +3,6 @@
  * Assignment-first dashboard components for referee workflow optimization
  */
 
-export { CurrentAssignmentCard } from './CurrentAssignmentCard';
+export { CurrentAssignmentCard as DashboardCurrentCard } from './CurrentAssignmentCard';
 export { CountdownTimer } from './CountdownTimer';
 export { AssignmentTimeline } from './AssignmentTimeline';

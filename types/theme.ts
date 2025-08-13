@@ -15,6 +15,18 @@ export interface ColorToken {
   background: string;
 }
 
+export interface BrandColors {
+  fivbPrimary: string;
+  fivbSecondary: string;
+  fivbAccent: string;
+  fivbSuccess: string;
+  fivbWarning: string;
+  fivbError: string;
+  primaryLight: string;
+  secondaryLight: string;
+  accentLight: string;
+}
+
 export interface ColorContrast {
   ratio: number;
   wcagAA: boolean;
@@ -90,6 +102,7 @@ export interface IconTokens {
 
 export interface DesignTokens {
   colors: ColorToken;
+  brandColors: BrandColors;
   statusColors: StatusColors;
   iconTokens: IconTokens;
   typography: TypographyScale;

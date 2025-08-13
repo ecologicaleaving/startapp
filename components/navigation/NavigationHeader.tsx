@@ -31,7 +31,13 @@ export const NavigationHeader: React.FC<NavigationHeaderProps> = ({
     if (onBackPress) {
       onBackPress();
     } else {
-      router.back();
+      // Check if we can go back before calling router.back()
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        // No previous screen - could navigate to home or show a message
+        console.log('No previous screen to navigate back to');
+      }
     }
   };
 

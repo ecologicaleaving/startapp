@@ -103,7 +103,10 @@ export const StatusCard: React.FC<StatusCardProps> = React.memo(({
         </View>
       )}
       
-      <View style={styles.content}>
+      <View style={[
+        styles.content,
+        showStatusBadge && { paddingTop: spacing.xl }
+      ]}>
         <View style={styles.header}>
           <H2Text style={styles.title} numberOfLines={2}>
             {title}
@@ -159,7 +162,6 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.md,
-    paddingTop: showStatusBadge ? spacing.xl : spacing.md, // Extra space for badge
   },
   header: {
     marginBottom: spacing.sm,

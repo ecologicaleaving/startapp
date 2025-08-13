@@ -11,7 +11,7 @@ export type { StatusBadgeProps as OriginalStatusBadgeProps } from './StatusBadge
 export { StatusCard } from './StatusCard';
 export type { StatusCardProps } from './StatusCard';
 
-export { StatusIcon, MultiStatusIcon } from './StatusIcon';
+export { StatusIcon as StatusStatusIcon, MultiStatusIcon } from './StatusIcon';
 export type { StatusIconProps as OriginalStatusIconProps, MultiStatusIconProps } from './StatusIcon';
 
 export { StatusBar, SimpleProgressBar } from './StatusBar';

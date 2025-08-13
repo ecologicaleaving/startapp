@@ -12,7 +12,7 @@ import { Tournament } from '../types/tournament';
 import { TournamentStorageService } from '../services/TournamentStorageService';
 import NavigationHeader from '../components/navigation/NavigationHeader';
 import BottomTabNavigation from '../components/navigation/BottomTabNavigation';
-import { CurrentAssignmentCard, AssignmentTimeline } from '../components/Dashboard';
+import { DashboardCurrentCard as CurrentAssignmentCard, AssignmentTimeline } from '../components/Dashboard';
 import { useCurrentAssignment } from '../hooks/useCurrentAssignment';
 import { StatusIndicator } from '../components/Status';
 import { designTokens } from '../theme/tokens';
@@ -165,7 +165,7 @@ const RefereeDashboardScreen: React.FC = () => {
       <View style={styles.container}>
         <NavigationHeader
           title="Referee Dashboard"
-          showBackButton={true}
+          showBackButton={false}
         />
         <View style={styles.loadingContainer}>
           <Text>Loading tournament...</Text>
@@ -180,7 +180,7 @@ const RefereeDashboardScreen: React.FC = () => {
       <View style={styles.container}>
         <NavigationHeader
           title="Referee Dashboard"
-          showBackButton={true}
+          showBackButton={false}
         />
         <View style={styles.loadingContainer}>
           <Text>No tournament selected</Text>
@@ -194,7 +194,7 @@ const RefereeDashboardScreen: React.FC = () => {
     <View style={styles.container}>
       <NavigationHeader
         title="Referee Dashboard"
-        showBackButton={true}
+        showBackButton={false}
         rightComponent={
           <TouchableOpacity style={styles.switchButton} onPress={handleSwitchTournament}>
             <Text style={styles.switchButtonText}>Switch</Text>
