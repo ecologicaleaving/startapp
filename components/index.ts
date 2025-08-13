@@ -20,3 +20,6 @@ export * from './TournamentInfo';
 
 // Status Components (Story 2.4)
 export * from './Status';
+
+// Touch Target Components (Story 2.5)
+export * from './TouchTarget';
