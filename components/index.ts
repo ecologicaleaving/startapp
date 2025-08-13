@@ -14,3 +14,9 @@ export * from './Assignment';
 
 // Match Result Components (Story 2.2)
 export * from './MatchResult';
+
+// Tournament Info Components (Story 2.3)
+export * from './TournamentInfo';
+
+// Status Components (Story 2.4)
+export * from './Status';

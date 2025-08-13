@@ -86,7 +86,8 @@
       "Bash(\"C:\\Users\\KreshOS\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe\" shell am start -n host.exp.exponent/.experience.ExperienceActivity -d \"exp://localhost:8086\")",
       "Bash(start /B:*)",
       "Bash(del test-match-api.js)",
-      "Bash(del debug-status-test.js)"
+      "Bash(del debug-status-test.js)",
+      "Bash(npx eslint:*)"
     ],
     "deny": []
   }
