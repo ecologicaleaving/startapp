@@ -44,11 +44,14 @@ export const getCurrentAssignment = (assignments: Assignment[]): Assignment | nu
  */
 export const getUpcomingAssignments = (assignments: Assignment[], limit = 3): Assignment[] => {
   const now = new Date();
+  const todayEnd = new Date();
+  todayEnd.setHours(23, 59, 59, 999);
   
   return assignments
     .filter(a => 
       a.status === 'upcoming' && 
-      a.matchTime.getTime() > now.getTime()
+      a.matchTime.getTime() > now.getTime() &&
+      a.matchTime.getTime() <= todayEnd.getTime() // Only today's assignments
     )
     .sort((a, b) => a.matchTime.getTime() - b.matchTime.getTime())
     .slice(0, limit);
@@ -78,7 +81,7 @@ export const hasUrgentAssignment = (assignments: Assignment[]): boolean => {
   const urgentThreshold = now.getTime() + 15 * 60 * 1000; // 15 minutes
   
   return assignments.some(a => 
-    (a.status === 'upcoming' || a.status === 'current') &&
+    a.status === 'upcoming' && // Only check upcoming assignments for urgency
     a.matchTime.getTime() <= urgentThreshold &&
     a.matchTime.getTime() > now.getTime()
   );
@@ -89,12 +92,22 @@ export const hasUrgentAssignment = (assignments: Assignment[]): boolean => {
  */
 export const getNextAssignment = (assignments: Assignment[], currentAssignment: Assignment | null): Assignment | null => {
   const now = new Date();
-  const currentTime = currentAssignment?.matchTime.getTime() || now.getTime();
   
+  // If no current assignment, return the earliest upcoming
+  if (!currentAssignment) {
+    return assignments
+      .filter(a => 
+        a.status === 'upcoming' && 
+        a.matchTime.getTime() > now.getTime()
+      )
+      .sort((a, b) => a.matchTime.getTime() - b.matchTime.getTime())[0] || null;
+  }
+  
+  // Find the next assignment after the current one (chronologically)
   return assignments
     .filter(a => 
       a.status === 'upcoming' && 
-      a.matchTime.getTime() > currentTime
+      a.matchTime.getTime() > now.getTime()
     )
     .sort((a, b) => a.matchTime.getTime() - b.matchTime.getTime())[0] || null;
 };

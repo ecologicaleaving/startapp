@@ -88,7 +88,10 @@
       "Bash(del test-match-api.js)",
       "Bash(del debug-status-test.js)",
       "Bash(npx eslint:*)",
-      "Bash(wmic process where processid=8408 delete:*)"
+      "Bash(wmic process where processid=8408 delete:*)",
+      "Bash(wmic process where:*)",
+      "Bash(git rm:*)",
+      "Bash(del NUL)"
     ],
     "deny": []
   }

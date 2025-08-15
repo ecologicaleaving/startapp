@@ -1,174 +1,190 @@
-/**
- * CountdownTimer Component
- * Real-time countdown display with color-coded urgency
- */
-
-import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Animated,
-} from 'react-native';
-import { useAssignmentCountdown } from '../../hooks/useAssignmentCountdown';
-import { designTokens } from '../../theme/tokens';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet } from 'react-native';
+import { designTokens } from '@/theme/tokens';
 
 interface CountdownTimerProps {
-  targetDate: Date | null;
+  targetTime: string;
   size?: 'small' | 'medium' | 'large';
-  showMessage?: boolean;
+  urgentThreshold?: number;
+  immediateThreshold?: number;
+  showProgress?: boolean;
+  showSeconds?: boolean;
+  onUrgent?: () => void;
+  onImmediate?: () => void;
 }
 
-export const CountdownTimer: React.FC<CountdownTimerProps> = React.memo(({
-  targetDate,
+export const CountdownTimer: React.FC<CountdownTimerProps> = ({
+  targetTime,
   size = 'medium',
-  showMessage = true,
+  urgentThreshold = 15,
+  immediateThreshold = 5,
+  showProgress = false,
+  showSeconds = true,
+  onUrgent,
+  onImmediate,
 }) => {
-  const { urgency, formattedTime, isCritical } = useAssignmentCountdown(targetDate);
-  const pulseAnim = React.useRef(new Animated.Value(1)).current;
+  const [timeRemaining, setTimeRemaining] = useState({
+    hours: 0,
+    minutes: 0,
+    seconds: 0,
+    totalMinutes: 0,
+    isOverdue: false,
+  });
 
-  // Pulse animation for critical state
-  React.useEffect(() => {
-    if (isCritical) {
-      const pulse = Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.1,
-          duration: 500,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 500,
-          useNativeDriver: true,
-        }),
-      ]);
+  const [urgencyLevel, setUrgencyLevel] = useState<'normal' | 'urgent' | 'immediate' | 'overdue'>('normal');
 
-      const loop = Animated.loop(pulse);
-      loop.start();
+  useEffect(() => {
+    const updateTimer = () => {
+      const now = new Date();
+      const target = new Date(targetTime);
+      const diffMs = target.getTime() - now.getTime();
+      
+      if (diffMs <= 0) {
+        const overdueMs = Math.abs(diffMs);
+        const overdueMins = Math.floor(overdueMs / (1000 * 60));
+        const overdueSecs = Math.floor((overdueMs % (1000 * 60)) / 1000);
+        
+        setTimeRemaining({
+          hours: 0,
+          minutes: overdueMins,
+          seconds: overdueSecs,
+          totalMinutes: -overdueMins,
+          isOverdue: true,
+        });
+        
+        setUrgencyLevel('overdue');
+        return;
+      }
 
-      return () => loop.stop();
+      const hours = Math.floor(diffMs / (1000 * 60 * 60));
+      const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
+      const totalMinutes = Math.floor(diffMs / (1000 * 60));
+
+      setTimeRemaining({
+        hours,
+        minutes,
+        seconds,
+        totalMinutes,
+        isOverdue: false,
+      });
+
+      if (totalMinutes <= immediateThreshold) {
+        if (urgencyLevel !== 'immediate') {
+          setUrgencyLevel('immediate');
+          onImmediate?.();
+        }
+      } else if (totalMinutes <= urgentThreshold) {
+        if (urgencyLevel !== 'urgent') {
+          setUrgencyLevel('urgent');
+          onUrgent?.();
+        }
+      } else {
+        setUrgencyLevel('normal');
+      }
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [targetTime, urgentThreshold, immediateThreshold, urgencyLevel, onUrgent, onImmediate]);
+
+  const formatTime = () => {
+    const { hours, minutes, seconds, isOverdue } = timeRemaining;
+    
+    if (isOverdue) {
+      return showSeconds 
+        ? `OVERDUE: ${minutes}:${seconds.toString().padStart(2, '0')}`
+        : `OVERDUE: ${minutes}m`;
     }
-  }, [isCritical, pulseAnim]);
 
-  const getSizeStyles = () => {
-    switch (size) {
-      case 'small':
-        return {
-          container: styles.smallContainer,
-          time: styles.smallTime,
-          message: styles.smallMessage,
-        };
-      case 'large':
-        return {
-          container: styles.largeContainer,
-          time: styles.largeTime,
-          message: styles.largeMessage,
-        };
-      case 'medium':
+    if (hours > 0) {
+      return showSeconds
+        ? `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+        : `${hours}h ${minutes}m`;
+    }
+
+    return showSeconds
+      ? `${minutes}:${seconds.toString().padStart(2, '0')}`
+      : `${minutes}m`;
+  };
+
+  const getUrgencyColor = () => {
+    switch (urgencyLevel) {
+      case 'immediate':
+      case 'overdue':
+        return designTokens.colors.error;
+      case 'urgent':
+        return designTokens.colors.warning;
       default:
-        return {
-          container: styles.mediumContainer,
-          time: styles.mediumTime,
-          message: styles.mediumMessage,
-        };
+        return designTokens.colors.primary;
     }
   };
 
-  const sizeStyles = getSizeStyles();
-
-  if (!targetDate) {
-    return (
-      <View style={[styles.container, sizeStyles.container, { backgroundColor: designTokens.colors.textSecondary }]}>
-        <Text style={[styles.time, sizeStyles.time]}>--:--</Text>
-        {showMessage && (
-          <Text style={[styles.message, sizeStyles.message]}>No assignment</Text>
-        )}
-      </View>
-    );
-  }
-
   return (
-    <Animated.View 
-      style={[
-        styles.container, 
-        sizeStyles.container,
-        { 
-          backgroundColor: urgency.color,
-          transform: isCritical ? [{ scale: pulseAnim }] : undefined,
-        }
-      ]}
-    >
-      <Text style={[styles.time, sizeStyles.time]}>
-        {formattedTime}
+    <View style={[styles.container, styles[size]]}>
+      <Text style={[styles.timerText, { color: getUrgencyColor() }]}>
+        {formatTime()}
       </Text>
-      {showMessage && (
-        <Text style={[styles.message, sizeStyles.message]}>
-          {urgency.message}
-        </Text>
+      {urgencyLevel !== 'normal' && (
+        <View style={[styles.urgencyIndicator, { backgroundColor: getUrgencyColor() }]}>
+          <Text style={styles.urgencyText}>
+            {urgencyLevel === 'overdue' ? 'OVERDUE' : 
+             urgencyLevel === 'immediate' ? 'NOW' : 'SOON'}
+          </Text>
+        </View>
       )}
-    </Animated.View>
+      <Text style={styles.contextText}>
+        {timeRemaining.isOverdue ? 'Match should have started' : 'Until match start'}
+      </Text>
+    </View>
   );
-});
-
-CountdownTimer.displayName = 'CountdownTimer';
+};
 
 const styles = StyleSheet.create({
   container: {
-    borderRadius: 8,
     alignItems: 'center',
-    justifyContent: 'center',
+    borderRadius: 12,
+    position: 'relative',
+    overflow: 'hidden',
   },
-  // Small size
-  smallContainer: {
-    paddingHorizontal: designTokens.spacing.xs,
-    paddingVertical: 4,
-    minWidth: 60,
-  },
-  smallTime: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: designTokens.colors.background,
-  },
-  smallMessage: {
-    fontSize: 9,
-    fontWeight: '500',
-    color: designTokens.colors.background,
-    opacity: 0.9,
-  },
-  // Medium size
-  mediumContainer: {
-    paddingHorizontal: designTokens.spacing.sm,
-    paddingVertical: designTokens.spacing.xs,
+  small: {
+    padding: designTokens.spacing.sm,
     minWidth: 80,
   },
-  mediumTime: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: designTokens.colors.background,
-  },
-  mediumMessage: {
-    fontSize: 10,
-    fontWeight: '500',
-    color: designTokens.colors.background,
-    opacity: 0.9,
-  },
-  // Large size
-  largeContainer: {
-    paddingHorizontal: designTokens.spacing.md,
-    paddingVertical: designTokens.spacing.sm,
+  medium: {
+    padding: designTokens.spacing.md,
     minWidth: 120,
   },
-  largeTime: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: designTokens.colors.background,
+  large: {
+    padding: designTokens.spacing.lg,
+    minWidth: 160,
   },
-  largeMessage: {
-    fontSize: 12,
-    fontWeight: '500',
+  timerText: {
+    textAlign: 'center',
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
+    fontSize: 24,
+  },
+  urgencyIndicator: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  urgencyText: {
     color: designTokens.colors.background,
-    opacity: 0.9,
+    fontSize: 10,
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
+  },
+  contextText: {
+    textAlign: 'center',
+    marginTop: designTokens.spacing.xs,
+    opacity: 0.8,
+    fontSize: 14,
+    color: designTokens.colors.textSecondary,
   },
 });
-
-export default CountdownTimer;
