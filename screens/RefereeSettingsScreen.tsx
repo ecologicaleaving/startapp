@@ -64,6 +64,10 @@ const RefereeSettingsScreenContent: React.FC = () => {
   const [loadingCourtMatches, setLoadingCourtMatches] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [currentTournament, setCurrentTournament] = useState<any>(null);
+  const [selectedReferee, setSelectedReferee] = useState<RefereeFromDB | null>(null);
+  const [refereeMatches, setRefereeMatches] = useState<BeachMatch[]>([]);
+  const [loadingRefereeMatches, setLoadingRefereeMatches] = useState(false);
+  const [showRefereeMatches, setShowRefereeMatches] = useState(false);
 
   // Assignment status management
   const { 
@@ -239,9 +243,50 @@ const RefereeSettingsScreenContent: React.FC = () => {
 
     setLoadingReferees(true);
     try {
+      console.log(`🏐 DEBUG: Loading referees for tournament ${selectedTournament}...`);
       
-      // Get matches for the tournament to extract referee information
+      // Step 1: Try to get referee list from tournament details (GetBeachTournament)
+      console.log(`🏐 DEBUG: Trying GetBeachTournament for tournament officials...`);
+      const tournamentDetails = await VisApiService.getBeachTournamentDetails(selectedTournament);
+      
+      if (tournamentDetails) {
+        if (tournamentDetails.hasOfficials) {
+          console.log(`🏐 DEBUG: Found officials data in tournament details!`);
+          console.log(`🏐 DEBUG: Tournaments with officials: ${tournamentDetails.tournamentsWithOfficials?.length || 0}`);
+          // TODO: Parse actual referee data from tournament details
+          // For now, continue to match-based extraction as fallback
+        } else {
+          console.log(`🏐 DEBUG: Tournament structure supports officials but none found in current data`);
+          console.log(`🏐 DEBUG: Total tournaments in response: ${tournamentDetails.totalTournaments}`);
+          console.log(`🏐 DEBUG: API accepts Officials/Referees fields but no data is populated yet`);
+        }
+      } else {
+        console.log(`🏐 DEBUG: No tournament details available, falling back to match-based extraction`);
+      }
+      
+      // Step 2: Get matches for the tournament to extract referee information
       const matches = await VisApiService.fetchMatchesDirectFromAPI(selectedTournament);
+      console.log(`🏐 DEBUG: Found ${matches.length} matches for tournament ${selectedTournament}`);
+      
+      if (matches.length === 0) {
+        console.log(`🏐 DEBUG: No matches found - tournament may not have started yet or no matches scheduled`);
+        Alert.alert('No Referees Found', 'This tournament has no matches scheduled yet, so referee assignments are not available. Referees are typically assigned closer to the tournament start date.');
+        setLoadingReferees(false);
+        return;
+      }
+      
+      // Log first few matches to see what referee data is available
+      matches.slice(0, 3).forEach((match, index) => {
+        console.log(`🏐 DEBUG: Match ${index + 1}:`, {
+          'No': match.No,
+          'Date': match.LocalDate,
+          'Time': match.LocalTime,
+          'Teams': `${match.TeamAName} vs ${match.TeamBName}`,
+          'Status': match.Status,
+          'Referee1': `${match.Referee1Name} (${match.NoReferee1}) [${match.Referee1FederationCode}]`,
+          'Referee2': `${match.Referee2Name} (${match.NoReferee2}) [${match.Referee2FederationCode}]`
+        });
+      });
       
       // Extract unique referees from matches
       const refereeMap = new Map<string, RefereeFromDB>();
@@ -267,6 +312,14 @@ const RefereeSettingsScreenContent: React.FC = () => {
       });
       
       const referees = Array.from(refereeMap.values()).sort((a, b) => a.Name.localeCompare(b.Name));
+      console.log(`🏐 DEBUG: Extracted ${referees.length} unique referees from matches`);
+      
+      if (referees.length === 0) {
+        console.log(`🏐 DEBUG: No referees found in match data - matches may not have referee assignments yet`);
+        Alert.alert('No Referees Found', 'The matches for this tournament do not have referee assignments yet. Referees are typically assigned closer to the tournament start date.');
+        setLoadingReferees(false);
+        return;
+      }
       
       setRefereeList(referees);
       setShowRefereeList(true);
@@ -280,23 +333,363 @@ const RefereeSettingsScreenContent: React.FC = () => {
 
   const handleSelectReferee = async (referee: RefereeFromDB) => {
     try {
-      const updatedProfile: RefereeProfile = {
-        refereeNo: referee.No,
-        name: referee.Name,
-        federationCode: referee.FederationCode || '',
-        certificationLevel: referee.Level || '',
-        languages: [],
-      };
+      console.log(`🏐 DEBUG: Selected referee: ${referee.Name} (${referee.No})`);
       
-      setProfile(updatedProfile);
+      setSelectedReferee(referee);
       setShowRefereeList(false);
+      setShowRefereeMatches(true);
       
-      // TODO: Save to secure storage
-      Alert.alert('Success', `Selected referee: ${referee.Name}`);
+      // Load matches for this referee
+      await loadRefereeMatches(referee);
+      
     } catch (error) {
       console.error('Failed to select referee:', error);
-      Alert.alert('Error', 'Failed to select referee');
+      Alert.alert('Error', 'Failed to load referee matches');
     }
+  };
+
+  const loadRefereeMatches = async (referee: RefereeFromDB) => {
+    if (!selectedTournament) {
+      console.log('🏐 DEBUG: No tournament selected for referee matches');
+      return;
+    }
+
+    try {
+      setLoadingRefereeMatches(true);
+      console.log(`🏐 DEBUG: Loading matches for referee ${referee.Name} in tournament ${selectedTournament}...`);
+
+      // Get all matches for the tournament (including both male and female if applicable)
+      let allMatches = await VisApiService.getBeachMatchList(selectedTournament);
+      console.log(`🏐 DEBUG: Found ${allMatches.length} matches for tournament ${selectedTournament}`);
+      
+      // TEMPORARILY DISABLED: Gender tournament logic to fix the issue
+      // TODO: Re-enable after confirming basic functionality works
+      /*
+      try {
+        const tournamentCode = await getTournamentCode(selectedTournament);
+        const oppositeGenderTournament = await getOppositeGenderTournament(selectedTournament, tournamentCode);
+        
+        if (oppositeGenderTournament) {
+          console.log(`🏐 DEBUG: Also loading matches from opposite gender tournament: ${oppositeGenderTournament}`);
+          const oppositeMatches = await VisApiService.getBeachMatchList(oppositeGenderTournament);
+          console.log(`🏐 DEBUG: Found ${oppositeMatches.length} matches for opposite gender tournament`);
+          allMatches = [...allMatches, ...oppositeMatches];
+        } else {
+          console.log(`🏐 DEBUG: No opposite gender tournament found for ${selectedTournament}`);
+        }
+      } catch (genderError) {
+        console.log(`🏐 DEBUG: Error loading opposite gender tournament, continuing with original matches:`, genderError);
+      }
+      */
+      
+      console.log(`🏐 DEBUG: Total matches for tournament ${selectedTournament}: ${allMatches.length}`);
+      
+      // Debug: Show sample match referee fields and gender info
+      if (allMatches.length > 0) {
+        const sampleMatch = allMatches[0];
+        console.log(`🏐 DEBUG: Sample match referee fields:`, {
+          Referee: sampleMatch.Referee,
+          Referee1: sampleMatch.Referee1,
+          Referee2: sampleMatch.Referee2,
+          Referee1Name: sampleMatch.Referee1Name,
+          Referee2Name: sampleMatch.Referee2Name,
+          Referee1No: sampleMatch.Referee1No,
+          Referee2No: sampleMatch.Referee2No,
+          allFields: Object.keys(sampleMatch).filter(key => key.toLowerCase().includes('ref'))
+        });
+        
+        // Debug gender information
+        console.log(`🏐 DEBUG: Gender info for first few matches:`, allMatches.slice(0, 3).map(match => ({
+          matchNo: match.No,
+          teams: `${match.TeamAName} vs ${match.TeamBName}`,
+          tournamentGender: match.tournamentGender,
+          genderFields: Object.keys(match).filter(key => key.toLowerCase().includes('gender'))
+        })));
+      }
+
+      // Debug the referee we're looking for
+      console.log(`🏐 DEBUG: Looking for referee:`, {
+        name: referee.Name,
+        no: referee.No,
+        federationCode: referee.FederationCode
+      });
+
+      // Filter matches where this referee is assigned
+      const refereeMatches = allMatches.filter((match, index) => {
+        // Check multiple referee field variations
+        const referee1Match = match.Referee1 && match.Referee1.includes(referee.Name);
+        const referee2Match = match.Referee2 && match.Referee2.includes(referee.Name);
+        const generalRefereeMatch = match.Referee && match.Referee.includes(referee.Name);
+        const referee1NameMatch = match.Referee1Name && match.Referee1Name.includes(referee.Name);
+        const referee2NameMatch = match.Referee2Name && match.Referee2Name.includes(referee.Name);
+        
+        // Also check by referee number
+        const referee1NoMatch = match.Referee1No && match.Referee1No === referee.No;
+        const referee2NoMatch = match.Referee2No && match.Referee2No === referee.No;
+        
+        // Also try partial name matches (surname only)
+        const refereeNameParts = referee.Name.split(' ');
+        const surname = refereeNameParts[refereeNameParts.length - 1];
+        const surnameMatch1 = match.Referee1Name && match.Referee1Name.includes(surname);
+        const surnameMatch2 = match.Referee2Name && match.Referee2Name.includes(surname);
+        
+        const isAssigned = referee1Match || referee2Match || generalRefereeMatch || 
+                          referee1NameMatch || referee2NameMatch || 
+                          referee1NoMatch || referee2NoMatch ||
+                          surnameMatch1 || surnameMatch2;
+        
+        // Debug first few matches regardless of assignment
+        if (index < 3) {
+          console.log(`🏐 DEBUG: Match ${index + 1} (${match.No || 'No ID'}) referee check:`, {
+            teams: `${match.TeamAName} vs ${match.TeamBName}`,
+            referee1: match.Referee1,
+            referee2: match.Referee2,
+            referee1Name: match.Referee1Name,
+            referee2Name: match.Referee2Name,
+            referee1No: match.Referee1No,
+            referee2No: match.Referee2No,
+            isAssigned: isAssigned,
+            matchedBy: {
+              referee1Match,
+              referee2Match,
+              generalRefereeMatch,
+              referee1NameMatch,
+              referee2NameMatch,
+              referee1NoMatch,
+              referee2NoMatch,
+              surnameMatch1,
+              surnameMatch2
+            }
+          });
+        }
+        
+        if (isAssigned) {
+          console.log(`🏐 DEBUG: ✅ Match ${match.No} assigned to ${referee.Name}!`);
+        }
+        
+        return isAssigned;
+      });
+
+      console.log(`🏐 DEBUG: Found ${refereeMatches.length} matches for referee ${referee.Name}`);
+      
+      // DEBUG MODE: If no matches found, show debugging info and all matches temporarily
+      if (refereeMatches.length === 0 && allMatches.length > 0) {
+        console.log(`🏐 DEBUG: ❌ No matches found for "${referee.Name}". Detailed analysis:`);
+        
+        // Show referee name variations for debugging
+        const refereeNameParts = referee.Name.split(' ');
+        const surname = refereeNameParts[refereeNameParts.length - 1];
+        console.log(`🏐 DEBUG: Referee name variations:`, {
+          fullName: referee.Name,
+          surname: surname,
+          parts: refereeNameParts
+        });
+        
+        // Check all referee fields in all matches
+        const allRefereeNames = new Set();
+        allMatches.forEach(match => {
+          if (match.Referee1Name) allRefereeNames.add(match.Referee1Name);
+          if (match.Referee2Name) allRefereeNames.add(match.Referee2Name);
+          if (match.Referee1) allRefereeNames.add(match.Referee1);
+          if (match.Referee2) allRefereeNames.add(match.Referee2);
+          if (match.Referee) allRefereeNames.add(match.Referee);
+        });
+        
+        console.log(`🏐 DEBUG: All unique referee names in tournament:`, Array.from(allRefereeNames).sort());
+        
+        // Show similar name matches
+        const similarNames = Array.from(allRefereeNames).filter(name => 
+          name.toLowerCase().includes(surname.toLowerCase()) ||
+          referee.Name.toLowerCase().includes(name.toLowerCase())
+        );
+        console.log(`🏐 DEBUG: Similar referee names found:`, similarNames);
+        
+        // TEMPORARY: Show all matches for debugging
+        console.log(`🏐 DEBUG: Temporarily showing all ${allMatches.length} matches for debugging purposes...`);
+        setRefereeMatches(allMatches); // Show all matches for debugging
+        
+        // Set default to most recent date using multiple date field fallbacks
+        const allDates = allMatches.map(match => 
+          match.Date || match.LocalDate || match.MatchDate || match.StartDate
+        ).filter(Boolean);
+        const sortedDates = [...new Set(allDates)].sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+        if (sortedDates.length > 0) {
+          setSelectedDate(sortedDates[0]); // Most recent date as default
+        }
+        return;
+      }
+      
+      // Sort matches by date and time
+      const sortedMatches = refereeMatches.sort((a, b) => {
+        const dateA = new Date(`${a.Date || ''} ${a.LocalTime || ''}`);
+        const dateB = new Date(`${b.Date || ''} ${b.LocalTime || ''}`);
+        return dateA.getTime() - dateB.getTime();
+      });
+
+      setRefereeMatches(sortedMatches);
+      
+      // Set default to most recent date (sorted in descending order for UI)
+      const uniqueDates = [...new Set(sortedMatches.map(match => match.Date))].filter(Boolean);
+      const sortedDatesDesc = uniqueDates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+      if (sortedDatesDesc.length > 0) {
+        setSelectedDate(sortedDatesDesc[0]); // Most recent date as default
+      }
+
+    } catch (error) {
+      console.error(`Error loading referee matches for ${referee.Name}:`, error);
+      Alert.alert('Error', 'Failed to load referee matches');
+    } finally {
+      setLoadingRefereeMatches(false);
+    }
+  };
+
+  const getTournamentCode = async (tournamentNo: string): Promise<string | null> => {
+    try {
+      const tournaments = await TournamentStorageService.getStoredTournaments();
+      const tournament = tournaments.find(t => t.No === tournamentNo);
+      return tournament?.Code || null;
+    } catch (error) {
+      console.error('Error getting tournament code:', error);
+      return null;
+    }
+  };
+
+  const getOppositeGenderTournament = async (tournamentNo: string, tournamentCode: string | null): Promise<string | null> => {
+    if (!tournamentCode) return null;
+    
+    try {
+      const tournaments = await TournamentStorageService.getStoredTournaments();
+      
+      // Extract gender and base code
+      let oppositeCode = '';
+      if (tournamentCode.startsWith('M')) {
+        oppositeCode = 'W' + tournamentCode.substring(1);
+      } else if (tournamentCode.startsWith('W')) {
+        oppositeCode = 'M' + tournamentCode.substring(1);
+      } else {
+        // If no gender prefix, try both M and W versions
+        const mCode = 'M' + tournamentCode;
+        const wCode = 'W' + tournamentCode;
+        
+        const mTournament = tournaments.find(t => t.Code === mCode);
+        const wTournament = tournaments.find(t => t.Code === wCode);
+        
+        // Return the one that's different from current
+        if (mTournament && mTournament.No !== tournamentNo) return mTournament.No;
+        if (wTournament && wTournament.No !== tournamentNo) return wTournament.No;
+        
+        return null;
+      }
+      
+      const oppositeTournament = tournaments.find(t => t.Code === oppositeCode);
+      return oppositeTournament ? oppositeTournament.No : null;
+      
+    } catch (error) {
+      console.error('Error getting opposite gender tournament:', error);
+      return null;
+    }
+  };
+
+  const renderMatchItem = (match: BeachMatch, index: number) => {
+    // Winner determination logic
+    const teamAScore = parseInt(match.MatchPointsA || '0');
+    const teamBScore = parseInt(match.MatchPointsB || '0');
+    const teamAWon = teamAScore > teamBScore && teamAScore > 0;
+    const teamBWon = teamBScore > teamAScore && teamBScore > 0;
+
+    return (
+      <View key={match.No || index} style={styles.courtMatchCard}>
+        {/* Gender Strip */}
+        {match.tournamentGender && (
+          <View style={[
+            styles.genderStrip,
+            match.tournamentGender === 'M' ? styles.menStrip : styles.womenStrip
+          ]} />
+        )}
+        
+        {/* Teams Section - at the top */}
+        <View style={styles.matchTeamsHeader}>
+          <View style={styles.teamsOnlyColumn}>
+            <Text 
+              style={[
+                styles.teamName, 
+                teamAWon && styles.winnerTeamName
+              ]} 
+              numberOfLines={2}
+            >
+              {match.TeamAName || 'Team A'}
+            </Text>
+            <Text 
+              style={[
+                styles.teamName, 
+                teamBWon && styles.winnerTeamName
+              ]} 
+              numberOfLines={2}
+            >
+              {match.TeamBName || 'Team B'}
+            </Text>
+          </View>
+          
+          <View style={styles.scoreColumn}>
+            <View style={styles.matchScore}>
+              <Text 
+                style={[
+                  styles.scoreText,
+                  teamAWon && styles.winnerScoreText
+                ]}
+              >
+                {match.MatchPointsA || '0'}
+              </Text>
+              <Text 
+                style={[
+                  styles.scoreText,
+                  teamBWon && styles.winnerScoreText
+                ]}
+              >
+                {match.MatchPointsB || '0'}
+              </Text>
+            </View>
+          </View>
+        </View>
+        
+        {/* Court, Time and Duration Section */}
+        <View style={styles.matchInfoRow}>
+          <View style={styles.leftInfoGroup}>
+            {match.Court && (
+              <Text style={styles.courtInfoMiddle}>
+                {match.Court === 'CC' ? 'CC' : `C${match.Court}`}
+              </Text>
+            )}
+            {match.LocalTime && (
+              <Text style={styles.timeInfoMiddle}>
+                {match.LocalTime.substring(0, 5)}
+              </Text>
+            )}
+          </View>
+          <Text style={styles.durationInfoMiddle}>
+            {getMatchDuration(match)}
+          </Text>
+        </View>
+        
+        {/* Referees Section - at the bottom */}
+        {(match.Referee1Name || match.Referee2Name) && (
+          <View style={styles.refereesSection}>
+            {match.Referee1Name && (
+              <Text style={styles.refereeText}>
+                1° {match.Referee1Name}
+                {match.Referee1FederationCode && ` (${match.Referee1FederationCode})`}
+              </Text>
+            )}
+            {match.Referee2Name && (
+              <Text style={styles.refereeText}>
+                2° {match.Referee2Name}
+                {match.Referee2FederationCode && ` (${match.Referee2FederationCode})`}
+              </Text>
+            )}
+          </View>
+        )}
+      </View>
+    );
   };
 
   const handleSaveProfile = async () => {
@@ -390,8 +783,9 @@ const RefereeSettingsScreenContent: React.FC = () => {
   };
 
   const handleRefereeMonitor = () => {
-    // Show referee selection modal
-    setShowRefereeList(true);
+    // Load and show referee selection modal
+    console.log('🏐 DEBUG: Referee Monitor clicked, loading referee list...');
+    loadRefereeList();
   };
 
   // Load court matches based on selected court
@@ -536,6 +930,21 @@ const RefereeSettingsScreenContent: React.FC = () => {
       const date = new Date(dateStr);
       return date.toLocaleDateString('en-US', {
         weekday: 'short',
+        day: 'numeric'
+      });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  // Format match date for referee matches
+  const formatMatchDate = (dateStr: string) => {
+    if (!dateStr || dateStr === 'Unknown Date') return dateStr;
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString('en-US', {
+        weekday: 'short',
+        month: 'short',
         day: 'numeric'
       });
     } catch {
@@ -1284,6 +1693,151 @@ const RefereeSettingsScreenContent: React.FC = () => {
     );
   }
 
+  const renderRefereeMatchesSection = () => {
+    if (!selectedReferee) return null;
+
+    console.log(`🏐 DEBUG: renderRefereeMatchesSection - refereeMatches.length: ${refereeMatches.length}`);
+    console.log(`🏐 DEBUG: refereeMatches sample:`, refereeMatches.slice(0, 2));
+
+    // Debug the date fields in matches
+    console.log(`🏐 DEBUG: Date fields in first few matches:`, refereeMatches.slice(0, 3).map(match => ({
+      matchNo: match.No,
+      Date: match.Date,
+      LocalDate: match.LocalDate,
+      MatchDate: match.MatchDate,
+      StartDate: match.StartDate,
+      allDateFields: Object.keys(match).filter(key => key.toLowerCase().includes('date'))
+    })));
+
+    // Try multiple date field variations
+    const allDates = refereeMatches.map(match => 
+      match.Date || match.LocalDate || match.MatchDate || match.StartDate
+    ).filter(Boolean);
+    
+    console.log(`🏐 DEBUG: All found dates:`, allDates);
+
+    // Get unique dates from referee matches for the date tabs (most recent first)
+    const uniqueDates = [...new Set(allDates)].sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+    
+    console.log(`🏐 DEBUG: uniqueDates after processing:`, uniqueDates);
+    console.log(`🏐 DEBUG: selectedDate:`, selectedDate);
+    
+    // Filter matches by selected date (check multiple date fields)
+    const filteredMatches = selectedDate 
+      ? refereeMatches.filter(match => {
+          const matchDate = match.Date || match.LocalDate || match.MatchDate || match.StartDate;
+          return matchDate === selectedDate;
+        })
+      : refereeMatches;
+      
+    console.log(`🏐 DEBUG: filteredMatches.length:`, filteredMatches.length);
+
+    return (
+      <ScrollView style={styles.courtSelectionFullScreen} contentContainerStyle={styles.courtSelectionContent}>
+        
+        {/* Header with referee info and back button */}
+        <View style={styles.refereeHeaderSection}>
+          <TouchableOpacity 
+            style={styles.backButton} 
+            onPress={() => setShowRefereeMatches(false)}
+          >
+            <Text style={styles.backButtonText}>← Back to Referees</Text>
+          </TouchableOpacity>
+          <Text style={styles.refereeHeaderTitle}>
+            {selectedReferee.Name} ({selectedReferee.FederationCode || 'N/A'})
+          </Text>
+          <Text style={styles.refereeHeaderSubtitle}>
+            {refereeMatches.length} assigned matches
+          </Text>
+        </View>
+
+        {loadingRefereeMatches ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="small" color="#FF6B35" />
+            <Text style={styles.loadingText}>Loading referee matches...</Text>
+          </View>
+        ) : (
+          <>
+            {/* Date filter tabs - Always show when we have matches */}
+            {console.log(`🏐 DEBUG: Rendering date tabs. refereeMatches.length: ${refereeMatches.length}, uniqueDates.length: ${uniqueDates.length}, dates:`, uniqueDates)}
+            {refereeMatches.length > 0 && (
+              <View style={styles.dateTabsContainer}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dateTabsScrollView}>
+                  <TouchableOpacity
+                    style={[
+                      styles.dateTab,
+                      !selectedDate && styles.activeDateTab
+                    ]}
+                    onPress={() => setSelectedDate('')}
+                  >
+                    <Text style={[
+                      styles.dateTabText,
+                      !selectedDate && styles.activeDateTabText
+                    ]}>
+                      All Days ({refereeMatches.length})
+                    </Text>
+                  </TouchableOpacity>
+                  
+                  {uniqueDates.map((date, index) => {
+                    const matchCount = refereeMatches.filter(match => {
+                      const matchDate = match.Date || match.LocalDate || match.MatchDate || match.StartDate;
+                      return matchDate === date;
+                    }).length;
+                    const displayDate = formatMatchDate(date);
+                    const isToday = new Date(date).toDateString() === new Date().toDateString();
+                    const isMostRecent = index === 0;
+                    
+                    console.log(`🏐 DEBUG: Creating date tab for ${date} - displayDate: ${displayDate}, matchCount: ${matchCount}`);
+                    
+                    return (
+                      <TouchableOpacity
+                        key={date}
+                        style={[
+                          styles.dateTab,
+                          selectedDate === date && styles.activeDateTab,
+                          isMostRecent && styles.mostRecentDateTab
+                        ]}
+                        onPress={() => setSelectedDate(date)}
+                      >
+                        <Text style={[
+                          styles.dateTabText,
+                          selectedDate === date && styles.activeDateTabText
+                        ]}>
+                          {isToday ? '📅 Today' : displayDate} ({matchCount})
+                          {isMostRecent && !isToday && ' 🔥'}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            )}
+
+            {/* Matches list */}
+            <View style={styles.matchesContainer}>
+              {filteredMatches.length > 0 ? (
+                filteredMatches.map((match, index) => (
+                  <View key={`${match.No}-${index}`} style={styles.matchItem}>
+                    {renderMatchItem(match, index)}
+                  </View>
+                ))
+              ) : (
+                <View style={styles.noMatchesContainer}>
+                  <Text style={styles.noMatchesText}>
+                    {selectedDate 
+                      ? `No matches assigned to ${selectedReferee.Name} on ${formatMatchDate(selectedDate)}`
+                      : `No matches assigned to ${selectedReferee.Name}`
+                    }
+                  </Text>
+                </View>
+              )}
+            </View>
+          </>
+        )}
+      </ScrollView>
+    );
+  };
+
   return (
     <View style={styles.container}>
       <NavigationHeader
@@ -1320,7 +1874,9 @@ const RefereeSettingsScreenContent: React.FC = () => {
       />
 
       <View style={styles.mainContent}>
-        {showCourtSelection ? renderCourtSelectionSection() : renderMonitorOptions()}
+        {showCourtSelection ? renderCourtSelectionSection() : 
+         showRefereeMatches ? renderRefereeMatchesSection() : 
+         renderMonitorOptions()}
       </View>
       
       {renderRefereeListModal()}
@@ -1961,6 +2517,9 @@ const styles = StyleSheet.create({
   dateTabsContainer: {
     marginBottom: 16,
   },
+  dateTabsScrollView: {
+    flexGrow: 0,
+  },
   dateTabsContent: {
     paddingLeft: 8,
     paddingRight: 8,
@@ -2117,6 +2676,45 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#000000',
     marginBottom: 2,
+  },
+  
+  // Referee Matches Section Styles
+  refereeHeaderSection: {
+    backgroundColor: '#FFFFFF',
+    padding: 20,
+    borderRadius: 12,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  backButton: {
+    alignSelf: 'flex-start',
+    padding: 8,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  backButtonText: {
+    fontSize: 14,
+    color: '#FF6B35',
+    fontWeight: '600',
+  },
+  refereeHeaderTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333333',
+    marginBottom: 4,
+  },
+  refereeHeaderSubtitle: {
+    fontSize: 14,
+    color: '#666666',
+  },
+  mostRecentDateTab: {
+    borderWidth: 1,
+    borderColor: '#FF6B35',
   },
 });
 

@@ -253,7 +253,7 @@ const TournamentSelectionScreen: React.FC = () => {
   );
 
   const renderFilterTabs = () => {
-    const filterTypes: TournamentType[] = ['ALL', 'BPT'];
+    const filterTypes: TournamentType[] = ['ALL', 'BPT', 'CEV'];
     
     return (
       <View style={styles.filterContainer}>
