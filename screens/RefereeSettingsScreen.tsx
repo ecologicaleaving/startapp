@@ -362,27 +362,50 @@ const RefereeSettingsScreenContent: React.FC = () => {
       let allMatches = await VisApiService.getBeachMatchList(selectedTournament);
       console.log(`🏐 DEBUG: Found ${allMatches.length} matches for tournament ${selectedTournament}`);
       
-      // TEMPORARILY DISABLED: Gender tournament logic to fix the issue
-      // TODO: Re-enable after confirming basic functionality works
-      /*
+      // Add source metadata to original matches
+      allMatches = allMatches.map(match => ({
+        ...match,
+        sourceType: 'original',
+        sourceTournament: selectedTournament
+      }));
+      
+      // Try to load opposite gender tournament matches (robust implementation)
       try {
-        const tournamentCode = await getTournamentCode(selectedTournament);
-        const oppositeGenderTournament = await getOppositeGenderTournament(selectedTournament, tournamentCode);
+        console.log(`🏐 DEBUG: Attempting to find and load opposite gender tournament...`);
+        const oppositeGenderTournamentNo = await findOppositeGenderTournament(selectedTournament);
         
-        if (oppositeGenderTournament) {
-          console.log(`🏐 DEBUG: Also loading matches from opposite gender tournament: ${oppositeGenderTournament}`);
-          const oppositeMatches = await VisApiService.getBeachMatchList(oppositeGenderTournament);
-          console.log(`🏐 DEBUG: Found ${oppositeMatches.length} matches for opposite gender tournament`);
-          allMatches = [...allMatches, ...oppositeMatches];
+        if (oppositeGenderTournamentNo && oppositeGenderTournamentNo !== selectedTournament) {
+          console.log(`🏐 DEBUG: Found opposite gender tournament: ${oppositeGenderTournamentNo}`);
+          try {
+            const oppositeMatches = await VisApiService.getBeachMatchList(oppositeGenderTournamentNo);
+            console.log(`🏐 DEBUG: Successfully loaded ${oppositeMatches.length} matches from opposite gender tournament`);
+            console.log(`🏐 DEBUG: Before combining: ${allMatches.length} original matches`);
+            
+            // Add source metadata to female matches
+            const oppositeMatchesWithMeta = oppositeMatches.map(match => ({
+              ...match,
+              sourceType: 'female',
+              sourceTournament: oppositeGenderTournamentNo
+            }));
+            
+            allMatches = [...allMatches, ...oppositeMatchesWithMeta];
+            console.log(`🏐 DEBUG: After combining: ${allMatches.length} total matches`);
+          } catch (oppositeMatchError) {
+            console.log(`🏐 DEBUG: Failed to load matches from opposite gender tournament, continuing with original:`, oppositeMatchError.message);
+          }
         } else {
-          console.log(`🏐 DEBUG: No opposite gender tournament found for ${selectedTournament}`);
+          console.log(`🏐 DEBUG: No distinct opposite gender tournament found`);
         }
-      } catch (genderError) {
-        console.log(`🏐 DEBUG: Error loading opposite gender tournament, continuing with original matches:`, genderError);
+      } catch (genderSearchError) {
+        console.log(`🏐 DEBUG: Error searching for opposite gender tournament, continuing with original matches:`, genderSearchError.message);
       }
-      */
       
       console.log(`🏐 DEBUG: Total matches for tournament ${selectedTournament}: ${allMatches.length}`);
+      
+      // Show breakdown by source
+      const originalMatches = allMatches.filter(m => m.sourceType === 'original').length;
+      const femaleMatches = allMatches.filter(m => m.sourceType === 'female').length;
+      console.log(`🏐 DEBUG: Match breakdown - Original: ${originalMatches}, Female: ${femaleMatches}`);
       
       // Debug: Show sample match referee fields and gender info
       if (allMatches.length > 0) {
@@ -472,6 +495,11 @@ const RefereeSettingsScreenContent: React.FC = () => {
 
       console.log(`🏐 DEBUG: Found ${refereeMatches.length} matches for referee ${referee.Name}`);
       
+      // Show breakdown of referee matches by source
+      const originalRefereeMatches = refereeMatches.filter(m => m.sourceType === 'original').length;
+      const femaleRefereeMatches = refereeMatches.filter(m => m.sourceType === 'female').length;
+      console.log(`🏐 DEBUG: Referee match breakdown - Original: ${originalRefereeMatches}, Female: ${femaleRefereeMatches}`);
+      
       // DEBUG MODE: If no matches found, show debugging info and all matches temporarily
       if (refereeMatches.length === 0 && allMatches.length > 0) {
         console.log(`🏐 DEBUG: ❌ No matches found for "${referee.Name}". Detailed analysis:`);
@@ -543,49 +571,73 @@ const RefereeSettingsScreenContent: React.FC = () => {
     }
   };
 
-  const getTournamentCode = async (tournamentNo: string): Promise<string | null> => {
+  const findOppositeGenderTournament = async (tournamentNo: string): Promise<string | null> => {
     try {
-      const tournaments = await TournamentStorageService.getStoredTournaments();
-      const tournament = tournaments.find(t => t.No === tournamentNo);
-      return tournament?.Code || null;
-    } catch (error) {
-      console.error('Error getting tournament code:', error);
-      return null;
-    }
-  };
-
-  const getOppositeGenderTournament = async (tournamentNo: string, tournamentCode: string | null): Promise<string | null> => {
-    if (!tournamentCode) return null;
-    
-    try {
-      const tournaments = await TournamentStorageService.getStoredTournaments();
+      console.log(`🏐 DEBUG: Looking for opposite gender tournament for ${tournamentNo}...`);
       
-      // Extract gender and base code
-      let oppositeCode = '';
-      if (tournamentCode.startsWith('M')) {
-        oppositeCode = 'W' + tournamentCode.substring(1);
-      } else if (tournamentCode.startsWith('W')) {
-        oppositeCode = 'M' + tournamentCode.substring(1);
-      } else {
-        // If no gender prefix, try both M and W versions
-        const mCode = 'M' + tournamentCode;
-        const wCode = 'W' + tournamentCode;
-        
-        const mTournament = tournaments.find(t => t.Code === mCode);
-        const wTournament = tournaments.find(t => t.Code === wCode);
-        
-        // Return the one that's different from current
-        if (mTournament && mTournament.No !== tournamentNo) return mTournament.No;
-        if (wTournament && wTournament.No !== tournamentNo) return wTournament.No;
-        
+      // Get all tournaments from API
+      const tournaments = await VisApiService.fetchDirectFromAPI();
+      console.log(`🏐 DEBUG: Fetched ${tournaments.length} tournaments from API`);
+      console.log(`🏐 DEBUG: Tournament codes:`, tournaments.map(t => `${t.Code} (${t.No})`).join(', '));
+      
+      const currentTournament = tournaments.find(t => t.No === tournamentNo);
+      
+      if (!currentTournament || !currentTournament.Code) {
+        console.log(`🏐 DEBUG: Current tournament not found or has no code`);
         return null;
       }
       
-      const oppositeTournament = tournaments.find(t => t.Code === oppositeCode);
-      return oppositeTournament ? oppositeTournament.No : null;
+      const currentCode = currentTournament.Code;
+      console.log(`🏐 DEBUG: Current tournament code: ${currentCode}`);
+      
+      // Try to find opposite gender tournament by transforming the code
+      let oppositeCode: string | null = null;
+      
+      if (currentCode.startsWith('M')) {
+        oppositeCode = 'W' + currentCode.substring(1);
+        console.log(`🏐 DEBUG: Looking for female version: ${oppositeCode}`);
+      } else if (currentCode.startsWith('W')) {
+        oppositeCode = 'M' + currentCode.substring(1);
+        console.log(`🏐 DEBUG: Looking for male version: ${oppositeCode}`);
+      } else {
+        // Try both M and W prefixes for tournaments without gender prefix
+        const maleCode = 'M' + currentCode;
+        const femaleCode = 'W' + currentCode;
+        
+        console.log(`🏐 DEBUG: Trying both gender versions: ${maleCode} and ${femaleCode}`);
+        
+        const maleTournament = tournaments.find(t => t.Code === maleCode);
+        const femaleTournament = tournaments.find(t => t.Code === femaleCode);
+        
+        // Return the one that's different from current
+        if (maleTournament && maleTournament.No !== tournamentNo) {
+          console.log(`🏐 DEBUG: Found male version: ${maleTournament.Code} (${maleTournament.No})`);
+          return maleTournament.No;
+        }
+        if (femaleTournament && femaleTournament.No !== tournamentNo) {
+          console.log(`🏐 DEBUG: Found female version: ${femaleTournament.Code} (${femaleTournament.No})`);
+          return femaleTournament.No;
+        }
+        
+        console.log(`🏐 DEBUG: No gender variants found for neutral tournament`);
+        return null;
+      }
+      
+      // Look for the opposite gender tournament
+      if (oppositeCode) {
+        const oppositeTournament = tournaments.find(t => t.Code === oppositeCode);
+        if (oppositeTournament) {
+          console.log(`🏐 DEBUG: ✅ Found opposite gender tournament: ${oppositeTournament.Code} (${oppositeTournament.No})`);
+          return oppositeTournament.No;
+        } else {
+          console.log(`🏐 DEBUG: Opposite gender tournament ${oppositeCode} not found in stored tournaments`);
+        }
+      }
+      
+      return null;
       
     } catch (error) {
-      console.error('Error getting opposite gender tournament:', error);
+      console.error('Error finding opposite gender tournament:', error);
       return null;
     }
   };
@@ -2715,6 +2767,9 @@ const styles = StyleSheet.create({
   mostRecentDateTab: {
     borderWidth: 1,
     borderColor: '#FF6B35',
+  },
+  matchItem: {
+    marginBottom: 8,
   },
 });
 

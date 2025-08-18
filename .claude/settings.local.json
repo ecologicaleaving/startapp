@@ -94,7 +94,8 @@
       "Bash(del NUL)",
       "mcp__ide__getDiagnostics",
       "WebSearch",
-      "WebFetch(domain:sslsites.de)"
+      "WebFetch(domain:sslsites.de)",
+      "Bash(rg:*)"
     ],
     "deny": []
   }

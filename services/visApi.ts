@@ -518,8 +518,8 @@ export class VisApiService implements IVisApiService {
    */
   private static async getOurTournamentDetails(tournamentNo: string): Promise<any> {
     try {
-      // Try to get tournament details from our storage or API
-      const tournaments = await TournamentStorageService.getStoredTournaments();
+      // Try to get tournament details from API
+      const tournaments = await this.fetchDirectFromAPI();
       const tournament = tournaments.find(t => t.No === tournamentNo);
       
       if (tournament) {
