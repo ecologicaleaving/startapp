@@ -10,7 +10,7 @@ import { useRouter, usePathname } from 'expo-router';
 import { useAssignmentStatus } from '../../hooks/useAssignmentStatus';
 import { designTokens } from '../../theme/tokens';
 
-export type TabRoute = 'assignments' | 'results' | 'tournament' | 'settings';
+export type TabRoute = 'details' | 'monitor';
 
 interface Tab {
   key: TabRoute;
@@ -26,27 +26,15 @@ interface BottomTabNavigationProps {
 
 const tabs: Tab[] = [
   {
-    key: 'assignments',
-    label: 'My Assignments',
+    key: 'details',
+    label: 'Details',
     icon: '📋',
-    route: '/my-assignments',
+    route: '/tournament-detail',
   },
   {
-    key: 'results',
-    label: 'Results',
-    icon: '🏆',
-    route: '/match-results',
-  },
-  {
-    key: 'tournament',
-    label: 'Tournament',
-    icon: '🏐',
-    route: '/referee-dashboard',
-  },
-  {
-    key: 'settings',
-    label: 'Settings',
-    icon: '⚙️',
+    key: 'monitor',
+    label: 'Monitor',
+    icon: '📺',
     route: '/referee-settings',
   },
 ];
@@ -70,10 +58,9 @@ export const BottomTabNavigation: React.FC<BottomTabNavigationProps> = ({
     if (currentTab) return currentTab;
     
     // Auto-detect based on current pathname
-    if (pathname.includes('my-assignments')) return 'assignments';
-    if (pathname.includes('match-results')) return 'results';
-    if (pathname.includes('referee-settings')) return 'settings';
-    return 'tournament'; // Default
+    if (pathname.includes('tournament-detail')) return 'details';
+    if (pathname.includes('referee-settings')) return 'monitor';
+    return 'details'; // Default
   };
 
   const activeTab = determineActiveTab();
@@ -81,16 +68,10 @@ export const BottomTabNavigation: React.FC<BottomTabNavigationProps> = ({
   // Get badge count for each tab based on assignment status
   const getBadgeCount = (tabKey: TabRoute): number => {
     switch (tabKey) {
-      case 'assignments':
-        // Show total active assignments (current + upcoming)
-        return (statusCounts.current || 0) + (statusCounts.upcoming || 0);
-      case 'results':
-        // Show completed matches that need attention
-        return statusCounts.completed || 0;
-      case 'tournament':
-        // Show emergency or critical assignments
-        return statusCounts.emergency || 0;
-      case 'settings':
+      case 'details':
+        // Show if tournament has updates or notifications
+        return 0; // No badge for details for now
+      case 'monitor':
         // Show sync issues or offline status
         return (!isOnline || syncStatus !== 'synced') ? 1 : 0;
       default:
@@ -101,13 +82,9 @@ export const BottomTabNavigation: React.FC<BottomTabNavigationProps> = ({
   // Get badge color for each tab
   const getBadgeColor = (tabKey: TabRoute): string => {
     switch (tabKey) {
-      case 'assignments':
-        return statusCounts.current > 0 ? designTokens.colors.success : designTokens.colors.secondary;
-      case 'results':
-        return designTokens.colors.accent;
-      case 'tournament':
-        return designTokens.colors.error; // Emergency indicator
-      case 'settings':
+      case 'details':
+        return designTokens.colors.secondary;
+      case 'monitor':
         return !isOnline ? designTokens.colors.error : designTokens.colors.warning;
       default:
         return designTokens.colors.secondary;
@@ -118,6 +95,10 @@ export const BottomTabNavigation: React.FC<BottomTabNavigationProps> = ({
     if (onTabPress) {
       onTabPress(tab.key);
     } else {
+      // Don't navigate if clicking on the currently active tab
+      if (tab.key === activeTab) {
+        return; // Stay on the same page
+      }
       router.push(tab.route);
     }
   };
@@ -150,13 +131,8 @@ export const BottomTabNavigation: React.FC<BottomTabNavigationProps> = ({
                   </View>
                 )}
                 
-                {/* Critical Status Pulse Animation for Emergency */}
-                {tab.key === 'tournament' && statusCounts.emergency > 0 && (
-                  <View style={[styles.pulseBadge, { backgroundColor: designTokens.colors.error }]} />
-                )}
-                
-                {/* Offline Indicator for Settings */}
-                {tab.key === 'settings' && !isOnline && (
+                {/* Offline Indicator for Monitor */}
+                {tab.key === 'monitor' && !isOnline && (
                   <View style={[styles.offlineDot, { backgroundColor: designTokens.colors.error }]} />
                 )}
               </View>

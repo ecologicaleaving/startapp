@@ -14,6 +14,7 @@ import { BeachMatch } from '../types/match';
 import { TournamentStorageService } from '../services/TournamentStorageService';
 import { VisApiService } from '../services/visApi';
 import { AssignmentStatusProvider, useAssignmentStatus } from '../hooks/useAssignmentStatus';
+import BottomTabNavigation from '../components/navigation/BottomTabNavigation';
 import NavigationHeader from '../components/navigation/NavigationHeader';
 import { designTokens } from '../theme/tokens';
 
@@ -125,35 +126,6 @@ const TournamentDetailScreenContent: React.FC = () => {
     }
   };
 
-  const handleSwitchToTournament = async () => {
-    if (!tournament.No) {
-      Alert.alert('Error', 'Invalid tournament data. Please go back and try again.');
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      // Save tournament selection
-      await TournamentStorageService.saveSelectedTournament(tournament);
-      
-      // Mark onboarding as completed
-      await TournamentStorageService.completeOnboarding();
-      
-      // Navigate to referee settings
-      router.replace({
-        pathname: '/referee-settings',
-        params: { tournamentData: JSON.stringify(tournament) }
-      });
-    } catch (error) {
-      console.error('Failed to switch tournament:', error);
-      Alert.alert(
-        'Error', 
-        'Failed to save tournament selection. Please check your device storage and try again.'
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const handleGoBack = () => {
     router.back();
@@ -618,20 +590,7 @@ const TournamentDetailScreenContent: React.FC = () => {
 
       </ScrollView>
 
-      {/* Bottom Action */}
-      <View style={styles.bottomAction}>
-        <TouchableOpacity 
-          style={[styles.switchButton, isLoading && styles.switchButtonDisabled]} 
-          onPress={handleSwitchToTournament}
-          disabled={isLoading}
-        >
-          {isLoading ? (
-            <ActivityIndicator color="#FFFFFF" size="small" />
-          ) : (
-            <Text style={styles.switchButtonText}>Go to Ref Tools</Text>
-          )}
-        </TouchableOpacity>
-      </View>
+      <BottomTabNavigation currentTab="details" />
     </View>
   );
 };
@@ -745,44 +704,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#1B365D',
     fontWeight: '600',
-  },
-  bottomAction: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    paddingBottom: 32,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-  },
-  switchButton: {
-    backgroundColor: '#FF6B35',
-    paddingVertical: 18,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 56,
-    shadowColor: '#FF6B35',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  switchButtonDisabled: {
-    backgroundColor: '#9CA3AF',
-    shadowOpacity: 0,
-    elevation: 0,
-  },
-  switchButtonText: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: 'bold',
   },
   
   // Status Integration Styles

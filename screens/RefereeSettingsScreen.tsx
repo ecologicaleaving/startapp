@@ -55,6 +55,7 @@ const RefereeSettingsScreenContent: React.FC = () => {
   const [refereeList, setRefereeList] = useState<RefereeFromDB[]>([]);
   const [loadingReferees, setLoadingReferees] = useState(false);
   const [showRefereeList, setShowRefereeList] = useState(false);
+  const [refereeCacheKey, setRefereeCacheKey] = useState<string | null>(null);
   const [selectedTournament, setSelectedTournament] = useState<string | null>(null);
   const [availableCourts, setAvailableCourts] = useState<string[]>([]);
   const [selectedCourt, setSelectedCourt] = useState<string>('All Courts');
@@ -241,30 +242,18 @@ const RefereeSettingsScreenContent: React.FC = () => {
       return;
     }
 
+    // Check cache first for faster loading
+    if (refereeCacheKey === selectedTournament && refereeList.length > 0) {
+      console.log(`🏐 DEBUG: Using cached referee list for tournament ${selectedTournament}`);
+      setShowRefereeList(true);
+      return;
+    }
+
     setLoadingReferees(true);
     try {
-      console.log(`🏐 DEBUG: Loading referees for tournament ${selectedTournament}...`);
+      console.log(`🏐 DEBUG: Loading referees for tournament ${selectedTournament} (optimized)...`);
       
-      // Step 1: Try to get referee list from tournament details (GetBeachTournament)
-      console.log(`🏐 DEBUG: Trying GetBeachTournament for tournament officials...`);
-      const tournamentDetails = await VisApiService.getBeachTournamentDetails(selectedTournament);
-      
-      if (tournamentDetails) {
-        if (tournamentDetails.hasOfficials) {
-          console.log(`🏐 DEBUG: Found officials data in tournament details!`);
-          console.log(`🏐 DEBUG: Tournaments with officials: ${tournamentDetails.tournamentsWithOfficials?.length || 0}`);
-          // TODO: Parse actual referee data from tournament details
-          // For now, continue to match-based extraction as fallback
-        } else {
-          console.log(`🏐 DEBUG: Tournament structure supports officials but none found in current data`);
-          console.log(`🏐 DEBUG: Total tournaments in response: ${tournamentDetails.totalTournaments}`);
-          console.log(`🏐 DEBUG: API accepts Officials/Referees fields but no data is populated yet`);
-        }
-      } else {
-        console.log(`🏐 DEBUG: No tournament details available, falling back to match-based extraction`);
-      }
-      
-      // Step 2: Get matches for the tournament to extract referee information
+      // Skip tournament details call for faster loading - get matches directly
       const matches = await VisApiService.fetchMatchesDirectFromAPI(selectedTournament);
       console.log(`🏐 DEBUG: Found ${matches.length} matches for tournament ${selectedTournament}`);
       
@@ -275,18 +264,9 @@ const RefereeSettingsScreenContent: React.FC = () => {
         return;
       }
       
-      // Log first few matches to see what referee data is available
-      matches.slice(0, 3).forEach((match, index) => {
-        console.log(`🏐 DEBUG: Match ${index + 1}:`, {
-          'No': match.No,
-          'Date': match.LocalDate,
-          'Time': match.LocalTime,
-          'Teams': `${match.TeamAName} vs ${match.TeamBName}`,
-          'Status': match.Status,
-          'Referee1': `${match.Referee1Name} (${match.NoReferee1}) [${match.Referee1FederationCode}]`,
-          'Referee2': `${match.Referee2Name} (${match.NoReferee2}) [${match.Referee2FederationCode}]`
-        });
-      });
+      // Quick sample check for referee data availability
+      const sampleMatch = matches[0];
+      console.log(`🏐 DEBUG: Sample referee data - R1: ${sampleMatch?.Referee1Name}, R2: ${sampleMatch?.Referee2Name}`);
       
       // Extract unique referees from matches
       const refereeMap = new Map<string, RefereeFromDB>();
@@ -322,6 +302,7 @@ const RefereeSettingsScreenContent: React.FC = () => {
       }
       
       setRefereeList(referees);
+      setRefereeCacheKey(selectedTournament); // Cache the result
       setShowRefereeList(true);
     } catch (error) {
       console.error('Failed to load referee list:', error);
@@ -362,11 +343,16 @@ const RefereeSettingsScreenContent: React.FC = () => {
       let allMatches = await VisApiService.getBeachMatchList(selectedTournament);
       console.log(`🏐 DEBUG: Found ${allMatches.length} matches for tournament ${selectedTournament}`);
       
+      // Get current tournament data to determine gender
+      const currentTournamentData = await TournamentStorageService.getSelectedTournament();
+      const currentGender = currentTournamentData?.Code ? VisApiService.extractGenderFromCode(currentTournamentData.Code) : 'Mixed';
+      
       // Add source metadata to original matches
       allMatches = allMatches.map(match => ({
         ...match,
         sourceType: 'original',
-        sourceTournament: selectedTournament
+        sourceTournament: selectedTournament,
+        tournamentGender: currentGender
       }));
       
       // Try to load opposite gender tournament matches (robust implementation)
@@ -381,11 +367,15 @@ const RefereeSettingsScreenContent: React.FC = () => {
             console.log(`🏐 DEBUG: Successfully loaded ${oppositeMatches.length} matches from opposite gender tournament`);
             console.log(`🏐 DEBUG: Before combining: ${allMatches.length} original matches`);
             
+            // Determine opposite gender
+            const oppositeGender = currentGender === 'M' ? 'W' : 'M';
+            
             // Add source metadata to female matches
             const oppositeMatchesWithMeta = oppositeMatches.map(match => ({
               ...match,
               sourceType: 'female',
-              sourceTournament: oppositeGenderTournamentNo
+              sourceTournament: oppositeGenderTournamentNo,
+              tournamentGender: oppositeGender
             }));
             
             allMatches = [...allMatches, ...oppositeMatchesWithMeta];
@@ -402,10 +392,13 @@ const RefereeSettingsScreenContent: React.FC = () => {
       
       console.log(`🏐 DEBUG: Total matches for tournament ${selectedTournament}: ${allMatches.length}`);
       
-      // Show breakdown by source
+      // Show breakdown by source and gender
       const originalMatches = allMatches.filter(m => m.sourceType === 'original').length;
       const femaleMatches = allMatches.filter(m => m.sourceType === 'female').length;
+      const maleMatches = allMatches.filter(m => m.tournamentGender === 'M').length;
+      const womenMatches = allMatches.filter(m => m.tournamentGender === 'W').length;
       console.log(`🏐 DEBUG: Match breakdown - Original: ${originalMatches}, Female: ${femaleMatches}`);
+      console.log(`🏐 DEBUG: Gender breakdown - Male (M): ${maleMatches}, Women (W): ${womenMatches}`);
       
       // Debug: Show sample match referee fields and gender info
       if (allMatches.length > 0) {
@@ -536,13 +529,13 @@ const RefereeSettingsScreenContent: React.FC = () => {
         console.log(`🏐 DEBUG: Temporarily showing all ${allMatches.length} matches for debugging purposes...`);
         setRefereeMatches(allMatches); // Show all matches for debugging
         
-        // Set default to most recent date using multiple date field fallbacks
+        // Set default to last day of tournament using multiple date field fallbacks
         const allDates = allMatches.map(match => 
           match.Date || match.LocalDate || match.MatchDate || match.StartDate
         ).filter(Boolean);
-        const sortedDates = [...new Set(allDates)].sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+        const sortedDates = [...new Set(allDates)].sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
         if (sortedDates.length > 0) {
-          setSelectedDate(sortedDates[0]); // Most recent date as default
+          setSelectedDate(sortedDates[sortedDates.length - 1]); // Last day of tournament as default (highest date)
         }
         return;
       }
@@ -556,11 +549,11 @@ const RefereeSettingsScreenContent: React.FC = () => {
 
       setRefereeMatches(sortedMatches);
       
-      // Set default to most recent date (sorted in descending order for UI)
+      // Set default to last day of tournament
       const uniqueDates = [...new Set(sortedMatches.map(match => match.Date))].filter(Boolean);
-      const sortedDatesDesc = uniqueDates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
-      if (sortedDatesDesc.length > 0) {
-        setSelectedDate(sortedDatesDesc[0]); // Most recent date as default
+      const sortedDatesAsc = uniqueDates.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+      if (sortedDatesAsc.length > 0) {
+        setSelectedDate(sortedDatesAsc[sortedDatesAsc.length - 1]); // Last day of tournament as default (highest date)
       }
 
     } catch (error) {
@@ -727,13 +720,13 @@ const RefereeSettingsScreenContent: React.FC = () => {
         {(match.Referee1Name || match.Referee2Name) && (
           <View style={styles.refereesSection}>
             {match.Referee1Name && (
-              <Text style={styles.refereeText}>
+              <Text style={selectedReferee?.Name === match.Referee1Name ? styles.selectedRefereeHighlight : styles.refereeText}>
                 1° {match.Referee1Name}
                 {match.Referee1FederationCode && ` (${match.Referee1FederationCode})`}
               </Text>
             )}
             {match.Referee2Name && (
-              <Text style={styles.refereeText}>
+              <Text style={selectedReferee?.Name === match.Referee2Name ? styles.selectedRefereeHighlight : styles.refereeText}>
                 2° {match.Referee2Name}
                 {match.Referee2FederationCode && ` (${match.Referee2FederationCode})`}
               </Text>
@@ -835,9 +828,18 @@ const RefereeSettingsScreenContent: React.FC = () => {
   };
 
   const handleRefereeMonitor = () => {
-    // Load and show referee selection modal
-    console.log('🏐 DEBUG: Referee Monitor clicked, loading referee list...');
-    loadRefereeList();
+    // Load and show referee selection page
+    console.log('🏐 DEBUG: Referee Monitor clicked...');
+    
+    // Check if we already have cached referees for this tournament
+    if (refereeCacheKey === selectedTournament && refereeList.length > 0) {
+      console.log('🏐 DEBUG: Using cached referee list for fast display');
+      setShowRefereeList(true);
+    } else {
+      console.log('🏐 DEBUG: Loading referee list...');
+      setShowRefereeList(true);
+      loadRefereeList();
+    }
   };
 
   // Load court matches based on selected court
@@ -1002,6 +1004,115 @@ const RefereeSettingsScreenContent: React.FC = () => {
     } catch {
       return dateStr;
     }
+  };
+
+  // Date navigation functions
+  const getAvailableDates = () => {
+    if (showCourtSelection) {
+      // For court monitor
+      return getCourtUniqueDates();
+    } else {
+      // For referee monitor
+      const allDates = refereeMatches.map(match => 
+        match.Date || match.LocalDate || match.MatchDate || match.StartDate
+      ).filter(Boolean);
+      return [...new Set(allDates)].sort((a, b) => new Date(a).getTime() - new Date(b).getTime()); // Ascending order for proper navigation
+    }
+  };
+
+  const getCurrentDateIndex = () => {
+    const dates = getAvailableDates();
+    if (!selectedDate) return -1;
+    return dates.indexOf(selectedDate);
+  };
+
+  const navigateToDate = (direction: 'prev' | 'next') => {
+    const dates = getAvailableDates();
+    const currentIndex = getCurrentDateIndex();
+    
+    if (currentIndex === -1) {
+      // No date selected, select the last day (most recent in the tournament)
+      if (dates.length > 0) {
+        setSelectedDate(dates[dates.length - 1]);
+      }
+      return;
+    }
+
+    let newIndex;
+    if (direction === 'prev') {
+      newIndex = currentIndex > 0 ? currentIndex - 1 : currentIndex; // Stop at first
+    } else {
+      newIndex = currentIndex < dates.length - 1 ? currentIndex + 1 : currentIndex; // Stop at last
+    }
+
+    // Only change if we actually moved
+    if (newIndex !== currentIndex) {
+      setSelectedDate(dates[newIndex]);
+    }
+  };
+
+  // Render date navigator with left/right arrows
+  const renderDateNavigator = () => {
+    const dates = getAvailableDates();
+    const currentIndex = getCurrentDateIndex();
+    const currentDate = selectedDate || (dates.length > 0 ? dates[0] : '');
+    
+    if (dates.length <= 1) return null; // Don't show navigator for single date
+    
+    // Check if we're at the boundaries
+    const isAtFirst = currentIndex <= 0;
+    const isAtLast = currentIndex >= dates.length - 1;
+    
+    // Get match count for current date
+    const matchCount = showCourtSelection 
+      ? getMatchesForSelectedDate().length
+      : refereeMatches.filter(match => {
+          const matchDate = match.Date || match.LocalDate || match.MatchDate || match.StartDate;
+          return matchDate === currentDate;
+        }).length;
+    
+    const displayDate = currentDate ? formatMatchDate(currentDate) : 'All Days';
+    const isToday = currentDate && new Date(currentDate).toDateString() === new Date().toDateString();
+    const dateInfo = isToday ? '📅 Today' : displayDate;
+    
+    return (
+      <View style={styles.dateNavigator}>
+        <TouchableOpacity 
+          style={[
+            styles.dateNavButton,
+            isAtFirst && styles.dateNavButtonDisabled
+          ]}
+          onPress={() => !isAtFirst && navigateToDate('prev')}
+          disabled={isAtFirst}
+        >
+          <Text style={[
+            styles.dateNavButtonText,
+            isAtFirst && styles.dateNavButtonTextDisabled
+          ]}>◀</Text>
+        </TouchableOpacity>
+        
+        <View style={styles.dateDisplayContainer}>
+          <Text style={styles.dateDisplayText}>{dateInfo}</Text>
+          <Text style={styles.datePositionText}>
+            {matchCount} matches • {currentIndex + 1} of {dates.length}
+          </Text>
+        </View>
+        
+        <TouchableOpacity 
+          style={[
+            styles.dateNavButton,
+            isAtLast && styles.dateNavButtonDisabled
+          ]}
+          onPress={() => !isAtLast && navigateToDate('next')}
+          disabled={isAtLast}
+        >
+          <Text style={[
+            styles.dateNavButtonText,
+            isAtLast && styles.dateNavButtonTextDisabled
+          ]}>▶</Text>
+        </TouchableOpacity>
+      </View>
+    );
   };
 
   // Get matches for selected date
@@ -1302,34 +1413,8 @@ const RefereeSettingsScreenContent: React.FC = () => {
               </View>
             ) : courtMatches.length > 0 ? (
               <>
-                {/* Date Tabs */}
-                {getCourtUniqueDates().length > 1 && (
-                  <View style={styles.dateTabsContainer}>
-                    <ScrollView 
-                      horizontal 
-                      showsHorizontalScrollIndicator={false}
-                      contentContainerStyle={styles.dateTabsContent}
-                    >
-                      {getCourtUniqueDates().map((date) => (
-                        <TouchableOpacity
-                          key={date}
-                          style={[
-                            styles.dateTab,
-                            selectedDate === date && styles.activeDateTab
-                          ]}
-                          onPress={() => handleCourtDateChange(date)}
-                        >
-                          <Text style={[
-                            styles.dateTabText,
-                            selectedDate === date && styles.activeDateTabText
-                          ]}>
-                            {formatCourtDateWithoutYear(date)}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
-                  </View>
-                )}
+                {/* Date Navigator */}
+                {renderDateNavigator()}
                 
                 {/* Matches List */}
                 <View style={styles.courtMatchesList}>
@@ -1417,13 +1502,13 @@ const RefereeSettingsScreenContent: React.FC = () => {
                         {(match.Referee1Name || match.Referee2Name) && (
                           <View style={styles.refereesSection}>
                             {match.Referee1Name && (
-                              <Text style={styles.refereeText}>
+                              <Text style={selectedReferee?.Name === match.Referee1Name ? styles.selectedRefereeHighlight : styles.refereeText}>
                                 1° {match.Referee1Name}
                                 {match.Referee1FederationCode && ` (${match.Referee1FederationCode})`}
                               </Text>
                             )}
                             {match.Referee2Name && (
-                              <Text style={styles.refereeText}>
+                              <Text style={selectedReferee?.Name === match.Referee2Name ? styles.selectedRefereeHighlight : styles.refereeText}>
                                 2° {match.Referee2Name}
                                 {match.Referee2FederationCode && ` (${match.Referee2FederationCode})`}
                               </Text>
@@ -1488,45 +1573,53 @@ const RefereeSettingsScreenContent: React.FC = () => {
     );
   };
 
-  const renderRefereeListModal = () => {
+  const renderRefereeListPage = () => {
     if (!showRefereeList) return null;
 
     return (
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Select Your Referee Profile</Text>
-            <TouchableOpacity onPress={() => setShowRefereeList(false)}>
-              <Text style={styles.closeButton}>✕</Text>
-            </TouchableOpacity>
+      <View style={styles.container}>
+        {/* Header with back button */}
+        <View style={styles.pageHeader}>
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={() => setShowRefereeList(false)}
+          >
+            <Text style={styles.backButtonText}>← Back</Text>
+          </TouchableOpacity>
+          <Text style={styles.pageTitle}>Select Referee</Text>
+          <View style={styles.headerSpacer} />
+        </View>
+        
+        {loadingReferees ? (
+          <View style={styles.centerContainer}>
+            <ActivityIndicator size="large" color="#FF6B35" />
+            <Text style={styles.loadingText}>Loading referee list...</Text>
           </View>
-          
-          {loadingReferees ? (
-            <View style={styles.modalLoadingContainer}>
-              <ActivityIndicator size="large" color="#FF6B35" />
-              <Text style={styles.loadingText}>Loading referee list...</Text>
-            </View>
-          ) : (
-            <FlatList
-              data={refereeList}
-              keyExtractor={(item) => item.No}
-              renderItem={({ item }) => (
+        ) : (
+          <FlatList
+            data={refereeList}
+            keyExtractor={(item) => item.No}
+            renderItem={({ item }) => (
+              <View style={styles.refereeCard}>
+                <View style={styles.refereeInfo}>
+                  <Text style={styles.refereeName}>{item.Name}</Text>
+                  <Text style={styles.refereeDetails}>
+                    #{item.No} • {item.FederationCode || 'N/A'}
+                  </Text>
+                </View>
                 <TouchableOpacity
-                  style={styles.refereeItem}
+                  style={styles.goButton}
                   onPress={() => handleSelectReferee(item)}
                 >
-                  <View style={styles.refereeInfo}>
-                    <Text style={styles.refereeName}>{item.Name}</Text>
-                    <Text style={styles.refereeDetails}>
-                      #{item.No} • {item.FederationCode || 'N/A'}
-                    </Text>
-                  </View>
+                  <Text style={styles.goButtonText}>Go</Text>
                 </TouchableOpacity>
-              )}
-              style={styles.refereeList}
-            />
-          )}
-        </View>
+              </View>
+            )}
+            style={styles.refereeListPage}
+            contentContainerStyle={styles.refereeListContainer}
+            showsVerticalScrollIndicator={false}
+          />
+        )}
       </View>
     );
   };
@@ -1740,7 +1833,7 @@ const RefereeSettingsScreenContent: React.FC = () => {
         <View style={styles.centerContainer}>
           <Text>Loading settings...</Text>
         </View>
-        <BottomTabNavigation currentTab="settings" />
+        <BottomTabNavigation currentTab="monitor" />
       </View>
     );
   }
@@ -1775,14 +1868,42 @@ const RefereeSettingsScreenContent: React.FC = () => {
     console.log(`🏐 DEBUG: selectedDate:`, selectedDate);
     
     // Filter matches by selected date (check multiple date fields)
-    const filteredMatches = selectedDate 
+    // If no date is selected, auto-select the last day of tournament
+    let effectiveSelectedDate = selectedDate;
+    if (!effectiveSelectedDate && refereeMatches.length > 0) {
+      const allDates = refereeMatches.map(match => 
+        match.Date || match.LocalDate || match.MatchDate || match.StartDate
+      ).filter(Boolean);
+      const sortedDates = [...new Set(allDates)].sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+      if (sortedDates.length > 0) {
+        effectiveSelectedDate = sortedDates[sortedDates.length - 1]; // Last day of tournament
+      }
+    }
+    
+    const filteredMatches = effectiveSelectedDate 
       ? refereeMatches.filter(match => {
           const matchDate = match.Date || match.LocalDate || match.MatchDate || match.StartDate;
-          return matchDate === selectedDate;
+          return matchDate === effectiveSelectedDate;
         })
       : refereeMatches;
+    
+    // Sort matches by time (ascending - earliest first)
+    const sortedMatches = filteredMatches.sort((a, b) => {
+      const timeA = a.LocalTime || a.Time || '00:00';
+      const timeB = b.LocalTime || b.Time || '00:00';
       
-    console.log(`🏐 DEBUG: filteredMatches.length:`, filteredMatches.length);
+      // Convert time strings (HH:MM) to comparable numbers
+      const getTimeNumber = (timeStr: string) => {
+        const parts = timeStr.split(':');
+        const hours = parseInt(parts[0] || '0', 10);
+        const minutes = parseInt(parts[1] || '0', 10);
+        return hours * 60 + minutes; // Total minutes from midnight
+      };
+      
+      return getTimeNumber(timeA) - getTimeNumber(timeB); // Ascending order
+    });
+      
+    console.log(`🏐 DEBUG: sortedMatches.length:`, sortedMatches.length);
 
     return (
       <ScrollView style={styles.courtSelectionFullScreen} contentContainerStyle={styles.courtSelectionContent}>
@@ -1810,65 +1931,14 @@ const RefereeSettingsScreenContent: React.FC = () => {
           </View>
         ) : (
           <>
-            {/* Date filter tabs - Always show when we have matches */}
-            {console.log(`🏐 DEBUG: Rendering date tabs. refereeMatches.length: ${refereeMatches.length}, uniqueDates.length: ${uniqueDates.length}, dates:`, uniqueDates)}
-            {refereeMatches.length > 0 && (
-              <View style={styles.dateTabsContainer}>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dateTabsScrollView}>
-                  <TouchableOpacity
-                    style={[
-                      styles.dateTab,
-                      !selectedDate && styles.activeDateTab
-                    ]}
-                    onPress={() => setSelectedDate('')}
-                  >
-                    <Text style={[
-                      styles.dateTabText,
-                      !selectedDate && styles.activeDateTabText
-                    ]}>
-                      All Days ({refereeMatches.length})
-                    </Text>
-                  </TouchableOpacity>
-                  
-                  {uniqueDates.map((date, index) => {
-                    const matchCount = refereeMatches.filter(match => {
-                      const matchDate = match.Date || match.LocalDate || match.MatchDate || match.StartDate;
-                      return matchDate === date;
-                    }).length;
-                    const displayDate = formatMatchDate(date);
-                    const isToday = new Date(date).toDateString() === new Date().toDateString();
-                    const isMostRecent = index === 0;
-                    
-                    console.log(`🏐 DEBUG: Creating date tab for ${date} - displayDate: ${displayDate}, matchCount: ${matchCount}`);
-                    
-                    return (
-                      <TouchableOpacity
-                        key={date}
-                        style={[
-                          styles.dateTab,
-                          selectedDate === date && styles.activeDateTab,
-                          isMostRecent && styles.mostRecentDateTab
-                        ]}
-                        onPress={() => setSelectedDate(date)}
-                      >
-                        <Text style={[
-                          styles.dateTabText,
-                          selectedDate === date && styles.activeDateTabText
-                        ]}>
-                          {isToday ? '📅 Today' : displayDate} ({matchCount})
-                          {isMostRecent && !isToday && ' 🔥'}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-              </View>
-            )}
+            {/* Date Navigator */}
+            {console.log(`🏐 DEBUG: Rendering date navigator. refereeMatches.length: ${refereeMatches.length}, uniqueDates.length: ${uniqueDates.length}, dates:`, uniqueDates)}
+            {renderDateNavigator()}
 
             {/* Matches list */}
             <View style={styles.matchesContainer}>
-              {filteredMatches.length > 0 ? (
-                filteredMatches.map((match, index) => (
+              {sortedMatches.length > 0 ? (
+                sortedMatches.map((match, index) => (
                   <View key={`${match.No}-${index}`} style={styles.matchItem}>
                     {renderMatchItem(match, index)}
                   </View>
@@ -1892,7 +1962,8 @@ const RefereeSettingsScreenContent: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <NavigationHeader
+      {!showRefereeList && (
+        <NavigationHeader
         title={currentTournament?.Name || "Settings"}
         showBackButton={true}
         showStatusBar={true}
@@ -1924,15 +1995,15 @@ const RefereeSettingsScreenContent: React.FC = () => {
           </View>
         }
       />
+      )}
 
       <View style={styles.mainContent}>
-        {showCourtSelection ? renderCourtSelectionSection() : 
+        {showRefereeList ? renderRefereeListPage() :
+         showCourtSelection ? renderCourtSelectionSection() : 
          showRefereeMatches ? renderRefereeMatchesSection() : 
          renderMonitorOptions()}
       </View>
-      
-      {renderRefereeListModal()}
-      <BottomTabNavigation currentTab="settings" />
+      {!showRefereeList && <BottomTabNavigation currentTab="monitor" />}
     </View>
   );
 };
@@ -2173,13 +2244,83 @@ const styles = StyleSheet.create({
   },
   refereeName: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: 'bold',
     color: '#1f2937',
     marginBottom: 4,
   },
   refereeDetails: {
     fontSize: 14,
     color: '#6b7280',
+  },
+  
+  // Referee List Page Styles
+  pageHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+  },
+  backButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+  },
+  backButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1B365D',
+  },
+  pageTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1B365D',
+    textAlign: 'center',
+  },
+  headerSpacer: {
+    width: 60, // Same width as back button to center title
+  },
+  refereeListPage: {
+    flex: 1,
+  },
+  refereeListContainer: {
+    padding: 16,
+  },
+  refereeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    shadowColor: '#1B365D',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  goButton: {
+    backgroundColor: '#FF6B35',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    minWidth: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  goButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
   },
   
   // Status Integration Styles
@@ -2602,6 +2743,66 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   
+  // Date Navigator Styles
+  dateNavigator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 16,
+    backgroundColor: '#F8F9FA',
+    borderRadius: 12,
+    marginHorizontal: 8,
+  },
+  dateNavButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#1B365D',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  dateNavButtonText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  dateNavButtonDisabled: {
+    backgroundColor: '#E5E7EB',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  dateNavButtonTextDisabled: {
+    color: '#9CA3AF',
+  },
+  dateDisplayContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+  },
+  dateDisplayText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1B365D',
+    textAlign: 'center',
+    marginBottom: 2,
+  },
+  datePositionText: {
+    fontSize: 12,
+    color: '#6B7280',
+    textAlign: 'center',
+  },
+  
   // Match Display Styles (copied from TournamentDetailScreen)
   matchTopInfo: {
     flexDirection: 'row',
@@ -2714,10 +2915,10 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 12,
   },
   menStrip: {
-    backgroundColor: '#1976D2',
+    backgroundColor: '#87CEEB',
   },
   womenStrip: {
-    backgroundColor: '#C2185B',
+    backgroundColor: '#FFB6C1',
   },
   
   // Referees Section Styles
@@ -2725,7 +2926,13 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   refereeText: {
-    fontSize: 12,
+    fontSize: 14,
+    color: '#000000',
+    marginBottom: 2,
+  },
+  selectedRefereeHighlight: {
+    fontSize: 14,
+    fontWeight: 'bold',
     color: '#000000',
     marginBottom: 2,
   },
