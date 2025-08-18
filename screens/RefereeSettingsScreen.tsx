@@ -15,6 +15,7 @@ import {
 import { useRouter } from 'expo-router';
 import { TournamentStorageService, UserPreferences } from '../services/TournamentStorageService';
 import { VisApiService } from '../services/visApi';
+import { BeachMatch } from '../types/match';
 import { AssignmentStatusProvider, useAssignmentStatus } from '../hooks/useAssignmentStatus';
 import { StatusIndicator } from '../components/Status/StatusIndicator';
 import NavigationHeader from '../components/navigation/NavigationHeader';
@@ -55,6 +56,14 @@ const RefereeSettingsScreenContent: React.FC = () => {
   const [loadingReferees, setLoadingReferees] = useState(false);
   const [showRefereeList, setShowRefereeList] = useState(false);
   const [selectedTournament, setSelectedTournament] = useState<string | null>(null);
+  const [availableCourts, setAvailableCourts] = useState<string[]>([]);
+  const [selectedCourt, setSelectedCourt] = useState<string>('All Courts');
+  const [loadingCourts, setLoadingCourts] = useState(false);
+  const [showCourtSelection, setShowCourtSelection] = useState(false);
+  const [courtMatches, setCourtMatches] = useState<BeachMatch[]>([]);
+  const [loadingCourtMatches, setLoadingCourtMatches] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<string>('');
+  const [currentTournament, setCurrentTournament] = useState<any>(null);
 
   // Assignment status management
   const { 
@@ -79,6 +88,18 @@ const RefereeSettingsScreenContent: React.FC = () => {
     loadSettings();
   }, []);
 
+  useEffect(() => {
+    if (selectedTournament) {
+      loadAvailableCourts();
+    }
+  }, [selectedTournament]);
+
+  useEffect(() => {
+    if (selectedTournament && selectedCourt && showCourtSelection) {
+      loadCourtMatches();
+    }
+  }, [selectedTournament, selectedCourt, showCourtSelection]);
+
   const loadSettings = async () => {
     try {
       // Load user preferences
@@ -89,6 +110,7 @@ const RefereeSettingsScreenContent: React.FC = () => {
       const tournament = await TournamentStorageService.getSelectedTournament();
       if (tournament) {
         setSelectedTournament(tournament.No);
+        setCurrentTournament(tournament);
       }
       
       // Load saved referee profile
@@ -101,6 +123,100 @@ const RefereeSettingsScreenContent: React.FC = () => {
       Alert.alert('Error', 'Failed to load settings');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Load available courts from tournament matches
+  const loadAvailableCourts = async () => {
+    if (!selectedTournament) return;
+    
+    setLoadingCourts(true);
+    try {
+      
+      // Get matches from both current and related tournaments
+      let allMatches: BeachMatch[] = [];
+      
+      // Load matches from current tournament
+      const currentMatches = await VisApiService.getBeachMatchList(selectedTournament);
+      allMatches = [...currentMatches];
+      
+      // Find related tournaments (men's/women's versions) and load their matches too
+      const tournament = await TournamentStorageService.getSelectedTournament();
+      if (tournament?.Code) {
+        try {
+          const relatedTournaments = await VisApiService.findRelatedTournaments(tournament);
+          for (const relatedTournament of relatedTournaments) {
+            if (relatedTournament.No !== selectedTournament) {
+              try {
+                const relatedMatches = await VisApiService.getBeachMatchList(relatedTournament.No);
+                allMatches = [...allMatches, ...relatedMatches];
+              } catch (relatedError) {
+                console.warn(`Failed to load matches from ${relatedTournament.Code}:`, relatedError);
+              }
+            }
+          }
+        } catch (relatedError) {
+          console.warn('Failed to find related tournaments:', relatedError);
+        }
+      }
+      
+      // Extract unique courts from matches
+      const allCourts = [...new Set(
+        allMatches
+          .map(match => match.Court)
+          .filter(court => court && court.trim() !== '')
+      )];
+      
+      // Sort courts in specific order: CC, C1, C2, C3, C4, then others alphabetically
+      const courtOrder = ['CC', 'C1', 'C2', 'C3', 'C4'];
+      const courts = allCourts.sort((a, b) => {
+        const aIndex = courtOrder.indexOf(a);
+        const bIndex = courtOrder.indexOf(b);
+        
+        if (aIndex !== -1 && bIndex !== -1) {
+          return aIndex - bIndex;
+        }
+        if (aIndex !== -1) return -1;
+        if (bIndex !== -1) return 1;
+        return a.localeCompare(b);
+      });
+      
+      setAvailableCourts(courts);
+      
+      // Extract referees from matches
+      const referees = new Map<string, RefereeFromDB>();
+      
+      allMatches.forEach(match => {
+        // Add Referee 1
+        if (match.NoReferee1 && match.Referee1Name) {
+          referees.set(match.NoReferee1, {
+            No: match.NoReferee1,
+            Name: match.Referee1Name,
+            FederationCode: match.Referee1FederationCode || '',
+            Level: 'International', // Default level, could be enhanced
+            isSelected: false
+          });
+        }
+        
+        // Add Referee 2
+        if (match.NoReferee2 && match.Referee2Name) {
+          referees.set(match.NoReferee2, {
+            No: match.NoReferee2,
+            Name: match.Referee2Name,
+            FederationCode: match.Referee2FederationCode || '',
+            Level: 'International', // Default level, could be enhanced
+            isSelected: false
+          });
+        }
+      });
+      
+      const refereeList = Array.from(referees.values()).sort((a, b) => a.Name.localeCompare(b.Name));
+      setRefereeList(refereeList);
+      
+    } catch (error) {
+      console.error('Failed to load available courts:', error);
+    } finally {
+      setLoadingCourts(false);
     }
   };
 
@@ -123,7 +239,6 @@ const RefereeSettingsScreenContent: React.FC = () => {
 
     setLoadingReferees(true);
     try {
-      console.log(`Loading referee list for tournament ${selectedTournament}...`);
       
       // Get matches for the tournament to extract referee information
       const matches = await VisApiService.fetchMatchesDirectFromAPI(selectedTournament);
@@ -152,8 +267,6 @@ const RefereeSettingsScreenContent: React.FC = () => {
       });
       
       const referees = Array.from(refereeMap.values()).sort((a, b) => a.Name.localeCompare(b.Name));
-      console.log(`Found ${referees.length} referees in tournament ${selectedTournament}`);
-      referees.forEach(ref => console.log(`- ${ref.Name} (${ref.No}) [${ref.FederationCode || 'N/A'}]`));
       
       setRefereeList(referees);
       setShowRefereeList(true);
@@ -179,7 +292,6 @@ const RefereeSettingsScreenContent: React.FC = () => {
       setShowRefereeList(false);
       
       // TODO: Save to secure storage
-      console.log('Selected referee:', updatedProfile);
       Alert.alert('Success', `Selected referee: ${referee.Name}`);
     } catch (error) {
       console.error('Failed to select referee:', error);
@@ -190,7 +302,6 @@ const RefereeSettingsScreenContent: React.FC = () => {
   const handleSaveProfile = async () => {
     try {
       // TODO: Save referee profile to storage/API
-      console.log('Saving referee profile:', profile);
       Alert.alert('Success', 'Profile updated successfully');
     } catch (error) {
       console.error('Failed to save profile:', error);
@@ -212,7 +323,6 @@ const RefereeSettingsScreenContent: React.FC = () => {
   const handleToggleStatusNotification = (type: keyof typeof statusNotifications, enabled: boolean) => {
     setStatusNotifications(prev => ({ ...prev, [type]: enabled }));
     // TODO: Save to storage or sync with assignment status service
-    console.log(`Status notification ${type} set to:`, enabled);
   };
 
   // Handle status bar press
@@ -220,6 +330,659 @@ const RefereeSettingsScreenContent: React.FC = () => {
     if (currentAssignmentStatus) {
       router.push('/my-assignments');
     }
+  };
+
+  // Render main monitor options
+  const renderMonitorOptions = () => {
+    return (
+      <View style={styles.monitorContainer}>
+        <View style={styles.welcomeSection}>
+          <Text style={styles.welcomeTitle}>Tournament Monitor</Text>
+          <Text style={styles.welcomeSubtitle}>Choose your monitoring mode</Text>
+        </View>
+        
+        <View style={styles.optionsContainer}>
+          {/* Court Monitor Card */}
+          <TouchableOpacity 
+            style={styles.monitorCard}
+            onPress={() => handleCourtMonitor()}
+          >
+            <View style={styles.cardIcon}>
+              <Text style={styles.iconText}>🏐</Text>
+            </View>
+            <Text style={styles.cardTitle}>Court Monitor</Text>
+            <Text style={styles.cardDescription}>
+              Select and monitor a specific court's matches and assignments
+            </Text>
+            <View style={styles.cardArrow}>
+              <Text style={styles.arrowText}>→</Text>
+            </View>
+          </TouchableOpacity>
+          
+          {/* Referee Monitor Card */}
+          <TouchableOpacity 
+            style={styles.monitorCard}
+            onPress={() => handleRefereeMonitor()}
+          >
+            <View style={styles.cardIcon}>
+              <Text style={styles.iconText}>👥</Text>
+            </View>
+            <Text style={styles.cardTitle}>Referee Monitor</Text>
+            <Text style={styles.cardDescription}>
+              Select and monitor a specific referee's assignments and matches
+            </Text>
+            <View style={styles.cardArrow}>
+              <Text style={styles.arrowText}>→</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
+  const handleCourtMonitor = () => {
+    // Navigate to court selection view within the same screen
+    setShowCourtSelection(true);
+    // Load courts and matches when entering court monitor
+    if (selectedTournament) {
+      loadAvailableCourts();
+    }
+  };
+
+  const handleRefereeMonitor = () => {
+    // Show referee selection modal
+    setShowRefereeList(true);
+  };
+
+  // Load court matches based on selected court
+  const loadCourtMatches = async () => {
+    if (!selectedTournament) return;
+    
+    setLoadingCourtMatches(true);
+    try {
+      
+      let allTournamentMatches: BeachMatch[] = [];
+      
+      // Load matches from current tournament
+      const currentMatches = await VisApiService.getBeachMatchList(selectedTournament);
+      const currentTournamentData = await TournamentStorageService.getSelectedTournament();
+      const currentGender = currentTournamentData?.Code ? VisApiService.extractGenderFromCode(currentTournamentData.Code) : 'Unknown';
+      
+      // Add metadata to current tournament matches
+      const inferredCountry = inferCountryFromName(currentTournamentData?.Name);
+      
+      const currentMatchesWithMeta = currentMatches.map(match => ({
+        ...match,
+        tournamentGender: currentGender,
+        tournamentNo: selectedTournament,
+        tournamentCode: currentTournamentData?.Code,
+        tournamentCountry: currentTournamentData?.Country || currentTournamentData?.CountryName || inferredCountry
+      }));
+      
+      // Helper function to infer country from tournament name
+      function inferCountryFromName(name?: string): string | undefined {
+        if (!name) return undefined;
+        const nameLower = name.toLowerCase();
+        
+        if (nameLower.includes('dusseldorf') || nameLower.includes('düsseldorf')) return 'Germany';
+        if (nameLower.includes('hamburg') || nameLower.includes('berlin') || nameLower.includes('munich')) return 'Germany';
+        if (nameLower.includes('rome') || nameLower.includes('roma') || nameLower.includes('italy')) return 'Italy';
+        if (nameLower.includes('paris') || nameLower.includes('france')) return 'France';
+        if (nameLower.includes('madrid') || nameLower.includes('spain')) return 'Spain';
+        if (nameLower.includes('vienna') || nameLower.includes('austria')) return 'Austria';
+        if (nameLower.includes('doha') || nameLower.includes('qatar')) return 'Qatar';
+        if (nameLower.includes('tokyo') || nameLower.includes('japan')) return 'Japan';
+        if (nameLower.includes('sydney') || nameLower.includes('australia')) return 'Australia';
+        if (nameLower.includes('toronto') || nameLower.includes('vancouver') || nameLower.includes('canada')) return 'Canada';
+        if (nameLower.includes('brazil') || nameLower.includes('rio') || nameLower.includes('sao paulo')) return 'Brazil';
+        
+        return undefined;
+      }
+      
+      allTournamentMatches = [...currentMatchesWithMeta];
+      
+      // Find related tournaments (men's/women's versions)
+      if (currentTournamentData?.Code) {
+        try {
+          const relatedTournaments = await VisApiService.findRelatedTournaments(currentTournamentData);
+          // Load matches from related tournaments (excluding current one)
+          for (const relatedTournament of relatedTournaments) {
+            if (relatedTournament.No !== selectedTournament) {
+              try {
+                const relatedMatches = await VisApiService.getBeachMatchList(relatedTournament.No);
+                const relatedGender = VisApiService.extractGenderFromCode(relatedTournament.Code);
+                
+                // Add metadata to related tournament matches
+                const relatedMatchesWithMeta = relatedMatches.map(match => ({
+                  ...match,
+                  tournamentGender: relatedGender,
+                  tournamentNo: relatedTournament.No,
+                  tournamentCode: relatedTournament.Code,
+                  tournamentCountry: relatedTournament.Country || relatedTournament.CountryName || inferCountryFromName(relatedTournament.Name)
+                }));
+                
+                allTournamentMatches = [...allTournamentMatches, ...relatedMatchesWithMeta];
+              } catch (relatedError) {
+                // Silent error handling
+              }
+            }
+          }
+        } catch (relatedError) {
+          console.warn('Failed to find related tournaments:', relatedError);
+        }
+      }
+      
+      // Filter by selected court if not 'All Courts'
+      let filteredMatches = allTournamentMatches;
+      if (selectedCourt !== 'All Courts') {
+        filteredMatches = allTournamentMatches.filter(match => match.Court === selectedCourt);
+      }
+      
+      // Sort matches ONLY by time (descending - most recent first)
+      const sortedMatches = filteredMatches.sort((a, b) => {
+        const timeA = a.LocalTime || '00:00';
+        const timeB = b.LocalTime || '00:00';
+        
+        // Convert time strings (HH:MM) to comparable numbers
+        const getTimeNumber = (timeStr: string) => {
+          const parts = timeStr.split(':');
+          if (parts.length < 2) return 0;
+          const hours = parseInt(parts[0]) || 0;
+          const minutes = parseInt(parts[1]) || 0;
+          return hours * 60 + minutes;
+        };
+        
+        const timeNumA = getTimeNumber(timeA);
+        const timeNumB = getTimeNumber(timeB);
+        
+        // Descending: 17:00 (1020) before 12:00 (720)
+        return timeNumB - timeNumA;
+      });
+      
+      
+      setCourtMatches(sortedMatches);
+      
+      // Debug logging removed
+      
+      // Match data ready
+      
+      // Get unique dates and set first date as selected
+      const uniqueDates = [...new Set(sortedMatches.map(match => match.LocalDate || 'Unknown Date'))];
+      if (uniqueDates.length > 0 && !selectedDate) {
+        setSelectedDate(uniqueDates[0]);
+      }
+      
+    } catch (error) {
+      console.error('Failed to load court matches:', error);
+    } finally {
+      setLoadingCourtMatches(false);
+    }
+  };
+
+  // Handle date tab change for court matches
+  const handleCourtDateChange = (date: string) => {
+    setSelectedDate(date);
+  };
+
+  // Get unique dates for court matches
+  const getCourtUniqueDates = () => {
+    return [...new Set(courtMatches.map(match => match.LocalDate || 'Unknown Date'))];
+  };
+
+  // Format date as weekday and day number
+  const formatCourtDateWithoutYear = (dateStr: string) => {
+    if (dateStr === 'Unknown Date') return dateStr;
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString('en-US', {
+        weekday: 'short',
+        day: 'numeric'
+      });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  // Get matches for selected date
+  const getMatchesForSelectedDate = () => {
+    if (!selectedDate) return courtMatches.slice(0, 10); // Show first 10 if no date selected
+    
+    const matchesForDate = courtMatches.filter(match => (match.LocalDate || 'Unknown Date') === selectedDate);
+    
+    // Sort by time descending (most recent first)
+    return matchesForDate.sort((a, b) => {
+      const timeA = a.LocalTime || '00:00';
+      const timeB = b.LocalTime || '00:00';
+      
+      // Convert time strings (HH:MM) to comparable numbers
+      const getTimeNumber = (timeStr: string) => {
+        const parts = timeStr.split(':');
+        if (parts.length !== 2) return 0;
+        const hours = parseInt(parts[0]) || 0;
+        const minutes = parseInt(parts[1]) || 0;
+        return hours * 60 + minutes;
+      };
+      
+      const timeNumA = getTimeNumber(timeA);
+      const timeNumB = getTimeNumber(timeB);
+      
+      // We want 17:00 BEFORE 12:00, so HIGHER numbers first (descending)
+      // 17:00 = 1020 minutes, 12:00 = 720 minutes
+      // For descending: bigger - smaller = positive (moves bigger item up)
+      return timeNumB - timeNumA;
+    });
+  };
+
+  // Simple time display with user's local time in parentheses
+  const getSimpleTimeWithUserTime = (localTime: string) => {
+    try {
+      const timeOnly = localTime.substring(0, 5); // Remove seconds: "13:15"
+      
+      // Get current user time for comparison (this is a simple approach)
+      // Since we don't know the tournament timezone, we'll show current local time
+      const now = new Date();
+      const userTimeStr = now.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
+      
+      return `${timeOnly} (${userTimeStr})`;
+    } catch (error) {
+      return localTime.substring(0, 5);
+    }
+  };
+
+  // Get timezone for tournament country
+  const getTournamentTimezone = (country?: string) => {
+    if (!country) return 'UTC';
+    
+    const countryTimezones: { [key: string]: string } = {
+      'Canada': 'America/Toronto',
+      'USA': 'America/New_York', 
+      'United States': 'America/New_York',
+      'Brazil': 'America/Sao_Paulo',
+      'Italy': 'Europe/Rome',
+      'France': 'Europe/Paris',
+      'Germany': 'Europe/Berlin',
+      'Spain': 'Europe/Madrid',
+      'Netherlands': 'Europe/Amsterdam',
+      'Poland': 'Europe/Warsaw',
+      'Austria': 'Europe/Vienna',
+      'Switzerland': 'Europe/Zurich',
+      'Norway': 'Europe/Oslo',
+      'Sweden': 'Europe/Stockholm',
+      'Denmark': 'Europe/Copenhagen',
+      'Finland': 'Europe/Helsinki',
+      'Australia': 'Australia/Sydney',
+      'Japan': 'Asia/Tokyo',
+      'China': 'Asia/Shanghai',
+      'Qatar': 'Asia/Qatar',
+      'UAE': 'Asia/Dubai',
+      'Turkey': 'Europe/Istanbul',
+      'Mexico': 'America/Mexico_City',
+      'Argentina': 'America/Argentina/Buenos_Aires',
+      'Chile': 'America/Santiago',
+      'South Africa': 'Africa/Johannesburg',
+      'Egypt': 'Africa/Cairo'
+    };
+    
+    return countryTimezones[country] || 'UTC';
+  };
+
+  // Format time showing tournament local time and user time if different
+  const formatTimeWithLocal = (localTime: string, tournamentCountry?: string) => {
+    try {
+      if (!localTime) return '';
+      
+      // Remove seconds and get HH:MM
+      const timeOnly = localTime.substring(0, 5);
+      
+      // Time conversion logic
+      
+      // Get timezone abbreviation for display
+      const getTzAbbr = (country?: string) => {
+        const abbrs: { [key: string]: string } = {
+          'Canada': 'EST',
+          'USA': 'EST',
+          'United States': 'EST',
+          'Brazil': 'BRT',
+          'Italy': 'CET',
+          'ITA': 'CET',
+          'France': 'CET',
+          'FRA': 'CET', 
+          'Germany': 'CET',
+          'GER': 'CET',
+          'Deutschland': 'CET',
+          'Spain': 'CET',
+          'ESP': 'CET',
+          'Netherlands': 'CET',
+          'NED': 'CET',
+          'Poland': 'CET',
+          'POL': 'CET',
+          'Austria': 'CET',
+          'AUT': 'CET',
+          'Switzerland': 'CET',
+          'SUI': 'CET',
+          'Norway': 'CET',
+          'NOR': 'CET',
+          'Sweden': 'CET',
+          'SWE': 'CET',
+          'Denmark': 'CET',
+          'DEN': 'CET',
+          'Qatar': 'AST',
+          'QAT': 'AST',
+          'Japan': 'JST',
+          'JPN': 'JST',
+          'Australia': 'AEDT',
+          'AUS': 'AEDT',
+          'Mexico': 'CST',
+          'MEX': 'CST',
+          'Argentina': 'ART',
+          'ARG': 'ART',
+          'Chile': 'CLT',
+          'CHI': 'CLT',
+        };
+        return abbrs[country || ''] || 'Local';
+      };
+      
+      const tzAbbr = getTzAbbr(tournamentCountry);
+      
+      // Convert tournament time to user's local time
+      // Assuming LocalTime is in the tournament's timezone
+      const [hours, minutes] = timeOnly.split(':').map(Number);
+      
+      // Create a date object for today with the tournament time
+      const today = new Date();
+      const tournamentDateTime = new Date(today.getFullYear(), today.getMonth(), today.getDate(), hours, minutes);
+      
+      // Get user's current timezone offset
+      const userTimezoneOffset = new Date().getTimezoneOffset();
+      
+      // Get tournament timezone offset (simplified approximation)
+      const getTournamentOffset = (country?: string) => {
+        const offsets: { [key: string]: number } = {
+          'Canada': 300, // EST is UTC-5 (300 minutes)
+          'USA': 300,    // EST is UTC-5
+          'United States': 300,
+          'Brazil': 180, // BRT is UTC-3 (180 minutes)
+          'Italy': -60,  // CET is UTC+1 (-60 minutes)
+          'ITA': -60,
+          'France': -60,
+          'FRA': -60,
+          'Germany': -60, // CET is UTC+1 (-60 minutes)
+          'GER': -60,
+          'Deutschland': -60,
+          'Spain': -60,
+          'ESP': -60,
+          'Netherlands': -60,
+          'NED': -60,
+          'Poland': -60,
+          'POL': -60,
+          'Austria': -60,
+          'AUT': -60,
+          'Switzerland': -60,
+          'SUI': -60,
+          'Norway': -60,
+          'NOR': -60,
+          'Sweden': -60,
+          'SWE': -60,
+          'Denmark': -60,
+          'DEN': -60,
+          'Qatar': -180, // AST is UTC+3 (-180 minutes)
+          'QAT': -180,
+          'Japan': -540, // JST is UTC+9 (-540 minutes)
+          'JPN': -540,
+          'Australia': -660, // AEDT is UTC+11 (-660 minutes)
+          'AUS': -660,
+          'Mexico': 360, // CST is UTC-6
+          'MEX': 360,
+          'Argentina': 180, // ART is UTC-3
+          'ARG': 180,
+          'Chile': 180,  // CLT is UTC-3
+          'CHI': 180,
+        };
+        return offsets[country || ''] || 0;
+      };
+      
+      const tournamentOffset = getTournamentOffset(tournamentCountry);
+      
+      // Calculate time difference between tournament and user timezone
+      // Note: getTimezoneOffset() returns positive for timezones behind UTC
+      // So we need to reverse the logic
+      const offsetDifference = userTimezoneOffset - tournamentOffset;
+      
+      // Timezone calculation
+      
+      // Apply the difference to get user's local time
+      const userDateTime = new Date(tournamentDateTime.getTime() + (offsetDifference * 60000));
+      const userTimeStr = userDateTime.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
+      
+      // Show tournament time and user time if they're different
+      if (userTimeStr === timeOnly) {
+        return `${timeOnly} ${tzAbbr}`;
+      } else {
+        return `${timeOnly} ${tzAbbr} (${userTimeStr})`;
+      }
+    } catch (error) {
+      console.warn('Error formatting time:', error);
+      return localTime.substring(0, 5);
+    }
+  };
+
+  // Calculate total match duration in minutes
+  const getMatchDuration = (match: BeachMatch): string => {
+    try {
+      const durations = [
+        match.DurationSet1,
+        match.DurationSet2,
+        match.DurationSet3
+      ].filter(duration => duration && duration.trim() !== '' && duration !== '0');
+      
+      if (durations.length === 0) return 'Match';
+      
+      let totalSeconds = 0;
+      
+      durations.forEach(duration => {
+        // Duration is in seconds, convert to integer
+        const seconds = parseInt(duration) || 0;
+        totalSeconds += seconds;
+      });
+      
+      const totalMinutes = Math.round(totalSeconds / 60);
+      return totalMinutes > 0 ? `${totalMinutes} min` : 'Match';
+    } catch (error) {
+      console.warn('Error calculating match duration:', error);
+      return 'Match';
+    }
+  };
+
+  // Render court selection section
+  const renderCourtSelectionSection = () => {
+    return (
+      <ScrollView style={styles.courtSelectionFullScreen} contentContainerStyle={styles.courtSelectionContent}>
+        
+        {loadingCourts ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="small" color="#FF6B35" />
+            <Text style={styles.loadingText}>Loading available courts...</Text>
+          </View>
+        ) : (
+          <View style={styles.courtSelectionContainer}>
+            <View style={styles.centerFilterContainer}>
+              {['All Courts', ...availableCourts].map((court) => (
+                <TouchableOpacity
+                  key={court}
+                  style={[
+                    styles.courtButton,
+                    selectedCourt === court && styles.activeCourtButton
+                  ]}
+                  onPress={() => setSelectedCourt(court)}
+                >
+                  <Text style={[
+                    styles.courtButtonText,
+                    selectedCourt === court && styles.activeCourtButtonText
+                  ]}>
+                    {court}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            
+            {/* Court Matches Section */}
+            {loadingCourtMatches ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="small" color="#FF6B35" />
+                <Text style={styles.loadingText}>Loading matches...</Text>
+              </View>
+            ) : courtMatches.length > 0 ? (
+              <>
+                {/* Date Tabs */}
+                {getCourtUniqueDates().length > 1 && (
+                  <View style={styles.dateTabsContainer}>
+                    <ScrollView 
+                      horizontal 
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.dateTabsContent}
+                    >
+                      {getCourtUniqueDates().map((date) => (
+                        <TouchableOpacity
+                          key={date}
+                          style={[
+                            styles.dateTab,
+                            selectedDate === date && styles.activeDateTab
+                          ]}
+                          onPress={() => handleCourtDateChange(date)}
+                        >
+                          <Text style={[
+                            styles.dateTabText,
+                            selectedDate === date && styles.activeDateTabText
+                          ]}>
+                            {formatCourtDateWithoutYear(date)}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+                
+                {/* Matches List */}
+                <View style={styles.courtMatchesList}>
+                  {getMatchesForSelectedDate().map((match, index) => {
+                    const scoreA = parseInt(match.MatchPointsA || '0');
+                    const scoreB = parseInt(match.MatchPointsB || '0');
+                    const teamAWon = scoreA > scoreB;
+                    const teamBWon = scoreB > scoreA;
+                    
+                    return (
+                      <View key={match.No || index} style={styles.courtMatchCard}>
+                        {/* Gender Strip */}
+                        {match.tournamentGender && (
+                          <View style={[
+                            styles.genderStrip,
+                            match.tournamentGender === 'M' ? styles.menStrip : styles.womenStrip
+                          ]} />
+                        )}
+                        
+                        {/* Teams Section - at the top */}
+                        <View style={styles.matchTeamsHeader}>
+                          <View style={styles.teamsOnlyColumn}>
+                            <Text 
+                              style={[
+                                styles.teamName, 
+                                teamAWon && styles.winnerTeamName
+                              ]} 
+                              numberOfLines={2}
+                            >
+                              {match.TeamAName || 'Team A'}
+                            </Text>
+                            <Text 
+                              style={[
+                                styles.teamName, 
+                                teamBWon && styles.winnerTeamName
+                              ]} 
+                              numberOfLines={2}
+                            >
+                              {match.TeamBName || 'Team B'}
+                            </Text>
+                          </View>
+                          
+                          <View style={styles.scoreColumn}>
+                            <View style={styles.matchScore}>
+                              <Text 
+                                style={[
+                                  styles.scoreText,
+                                  teamAWon && styles.winnerScoreText
+                                ]}
+                              >
+                                {match.MatchPointsA || '0'}
+                              </Text>
+                              <Text 
+                                style={[
+                                  styles.scoreText,
+                                  teamBWon && styles.winnerScoreText
+                                ]}
+                              >
+                                {match.MatchPointsB || '0'}
+                              </Text>
+                            </View>
+                          </View>
+                        </View>
+                        
+                        {/* Court, Time and Duration Section */}
+                        <View style={styles.matchInfoRow}>
+                          <View style={styles.leftInfoGroup}>
+                            {match.Court && (
+                              <Text style={styles.courtInfoMiddle}>
+                                {match.Court === 'CC' ? 'CC' : `C${match.Court}`}
+                              </Text>
+                            )}
+                            {match.LocalTime && (
+                              <Text style={styles.timeInfoMiddle}>
+                                {match.LocalTime.substring(0, 5)}
+                              </Text>
+                            )}
+                          </View>
+                          <Text style={styles.durationInfoMiddle}>
+                            {getMatchDuration(match)}
+                          </Text>
+                        </View>
+                        
+                        {/* Referees Section - at the bottom */}
+                        {(match.Referee1Name || match.Referee2Name) && (
+                          <View style={styles.refereesSection}>
+                            {match.Referee1Name && (
+                              <Text style={styles.refereeText}>
+                                1° {match.Referee1Name}
+                                {match.Referee1FederationCode && ` (${match.Referee1FederationCode})`}
+                              </Text>
+                            )}
+                            {match.Referee2Name && (
+                              <Text style={styles.refereeText}>
+                                2° {match.Referee2Name}
+                                {match.Referee2FederationCode && ` (${match.Referee2FederationCode})`}
+                              </Text>
+                            )}
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })}
+                </View>
+              </>
+            ) : (
+              <View style={styles.noMatchesContainer}>
+                <Text style={styles.noMatchesText}>No matches found for {selectedCourt}</Text>
+              </View>
+            )}
+          </View>
+        )}
+      </ScrollView>
+    );
   };
 
   // Handle assignment status data management  
@@ -524,7 +1287,7 @@ const RefereeSettingsScreenContent: React.FC = () => {
   return (
     <View style={styles.container}>
       <NavigationHeader
-        title="Settings"
+        title={currentTournament?.Name || "Settings"}
         showBackButton={true}
         showStatusBar={true}
         onStatusPress={handleStatusPress}
@@ -556,17 +1319,9 @@ const RefereeSettingsScreenContent: React.FC = () => {
         }
       />
 
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-        {renderAssignmentStatusSection()}
-        {renderProfileSection()}
-        {renderPreferencesSection()}
-        {renderAppSection()}
-        
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>Referee Tournament App v1.0</Text>
-          <Text style={styles.footerText}>Built for beach volleyball referees</Text>
-        </View>
-      </ScrollView>
+      <View style={styles.mainContent}>
+        {showCourtSelection ? renderCourtSelectionSection() : renderMonitorOptions()}
+      </View>
       
       {renderRefereeListModal()}
       <BottomTabNavigation currentTab="settings" />
@@ -941,6 +1696,427 @@ const styles = StyleSheet.create({
   
   dangerActionText: {
     color: designTokens.colors.background,
+  },
+  
+  // Court Selection Styles
+  courtSelectionContainer: {
+    marginTop: 12,
+  },
+  filterContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+  centerFilterContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  courtButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: '#1B365D',
+    backgroundColor: 'transparent',
+    minHeight: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  activeCourtButton: {
+    backgroundColor: '#1B365D',
+  },
+  courtButtonText: {
+    color: '#1B365D',
+    fontWeight: '600',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  activeCourtButtonText: {
+    color: '#FFFFFF',
+  },
+  courtSelectionHint: {
+    fontSize: 12,
+    color: '#6B7280',
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+  },
+  loadingText: {
+    marginLeft: 8,
+    fontSize: 14,
+    color: '#4A90A4',
+  },
+  
+  // Referee Dropdown Styles
+  refereeDropdownContainer: {
+    marginTop: 20,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  refereeDropdownLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1B365D',
+    marginBottom: 8,
+  },
+  refereeDropdown: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#F8F9FA',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    minHeight: 44,
+  },
+  refereeDropdownText: {
+    fontSize: 14,
+    color: '#1B365D',
+    flex: 1,
+  },
+  refereeDropdownArrow: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginLeft: 8,
+  },
+  selectedRefereeInfo: {
+    marginTop: 6,
+    paddingLeft: 4,
+  },
+  selectedRefereeDetails: {
+    fontSize: 12,
+    color: '#6B7280',
+    fontStyle: 'italic',
+  },
+  
+  // Main Monitor Interface Styles
+  mainContent: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  monitorContainer: {
+    flex: 1,
+    paddingHorizontal: 24,
+    paddingTop: 32,
+  },
+  welcomeSection: {
+    alignItems: 'center',
+    marginBottom: 40,
+  },
+  welcomeTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#1B365D',
+    marginBottom: 8,
+  },
+  welcomeSubtitle: {
+    fontSize: 16,
+    color: '#6B7280',
+    textAlign: 'center',
+  },
+  optionsContainer: {
+    gap: 20,
+  },
+  monitorCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 24,
+    shadowColor: '#1B365D',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    position: 'relative',
+  },
+  cardIcon: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  iconText: {
+    fontSize: 48,
+  },
+  cardTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1B365D',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  cardDescription: {
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 20,
+    paddingHorizontal: 8,
+  },
+  cardArrow: {
+    position: 'absolute',
+    right: 20,
+    top: '50%',
+    marginTop: -12,
+  },
+  arrowText: {
+    fontSize: 24,
+    color: '#FF6B35',
+    fontWeight: 'bold',
+  },
+  
+  // Court Selection Full Screen Styles
+  courtSelectionFullScreen: {
+    flex: 1,
+  },
+  courtSelectionContent: {
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    flexGrow: 1,
+  },
+  courtSelectionHeader: {
+    marginBottom: 8,
+  },
+  backButton: {
+    alignSelf: 'flex-start',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 8,
+    marginBottom: 20,
+  },
+  backButtonText: {
+    fontSize: 16,
+    color: '#1B365D',
+    fontWeight: '600',
+  },
+  courtSelectionTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#1B365D',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  courtSelectionSubtitle: {
+    fontSize: 16,
+    color: '#6B7280',
+    textAlign: 'center',
+  },
+  
+  // Court Matches Display Styles
+  courtMatchesSection: {
+    marginTop: 24,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  courtMatchesTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1B365D',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  courtMatchesList: {
+    flex: 1,
+  },
+  courtMatchCard: {
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+    marginBottom: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    position: 'relative',
+  },
+  noMatchesContainer: {
+    padding: 24,
+    alignItems: 'center',
+  },
+  noMatchesText: {
+    fontSize: 14,
+    color: '#6B7280',
+    fontStyle: 'italic',
+    textAlign: 'center',
+  },
+  
+  // Date Tabs Styles (copied from TournamentDetailScreen)
+  dateTabsContainer: {
+    marginBottom: 16,
+  },
+  dateTabsContent: {
+    paddingLeft: 8,
+    paddingRight: 8,
+  },
+  dateTab: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: '#1B365D',
+    backgroundColor: 'transparent',
+    minHeight: 36,
+    minWidth: 80,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  activeDateTab: {
+    backgroundColor: '#1B365D',
+  },
+  dateTabText: {
+    color: '#1B365D',
+    fontWeight: 'bold',
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  activeDateTabText: {
+    color: '#FFFFFF',
+  },
+  
+  // Match Display Styles (copied from TournamentDetailScreen)
+  matchTopInfo: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  leftTopInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  courtInfoTop: {
+    fontSize: 11,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  roundInfoTop: {
+    fontSize: 11,
+    color: '#000000',
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+  },
+  matchHeader: {
+    flexDirection: 'row',
+    marginBottom: 4,
+  },
+  matchTeamsHeader: {
+    flexDirection: 'row',
+    marginBottom: 8,
+  },
+  teamsOnlyColumn: {
+    flex: 3,
+    paddingRight: 8,
+    justifyContent: 'space-between',
+  },
+  teamsColumn: {
+    flex: 3,
+    paddingRight: 8,
+    justifyContent: 'space-between',
+  },
+  matchInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+    paddingVertical: 2,
+  },
+  leftInfoGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  courtInfoMiddle: {
+    fontSize: 12,
+    color: '#000000',
+    fontWeight: '500',
+  },
+  timeInfoMiddle: {
+    fontSize: 12,
+    color: '#000000',
+    fontWeight: '400',
+  },
+  durationInfoMiddle: {
+    fontSize: 12,
+    color: '#000000',
+    fontWeight: 'bold',
+  },
+  teamName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1B365D',
+    marginBottom: 6,
+    lineHeight: 18,
+    paddingVertical: 2,
+  },
+  winnerTeamName: {
+    fontWeight: 'bold',
+    color: '#2E8B57',
+  },
+  scoreColumn: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    paddingRight: 8,
+  },
+  matchScore: {
+    flexDirection: 'column',
+    alignItems: 'center',
+  },
+  scoreText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#FF6B35',
+    minWidth: 24,
+    textAlign: 'center',
+    marginVertical: 2,
+  },
+  winnerScoreText: {
+    fontWeight: 'bold',
+    color: '#2E8B57',
+  },
+  genderStrip: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 4,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+  },
+  menStrip: {
+    backgroundColor: '#1976D2',
+  },
+  womenStrip: {
+    backgroundColor: '#C2185B',
+  },
+  
+  // Referees Section Styles
+  refereesSection: {
+    marginTop: 8,
+  },
+  refereeText: {
+    fontSize: 12,
+    color: '#000000',
+    marginBottom: 2,
   },
 });
 

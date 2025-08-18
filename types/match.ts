@@ -30,4 +30,5 @@ export interface BeachMatch {
   tournamentGender?: string;
   tournamentNo?: string;
   tournamentCode?: string;
+  tournamentCountry?: string;
 }

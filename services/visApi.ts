@@ -340,11 +340,7 @@ export class VisApiService implements IVisApiService {
       
       const matches = this.parseBeachMatchList(xmlText);
       
-      console.log(`VisApiService: fetchMatchesDirectFromAPI parsed ${matches.length} matches for tournament ${tournamentNo}`);
-      if (matches.length > 0) {
-        console.log(`VisApiService: Sample matches:`);
-        matches.slice(0, 3).forEach(m => console.log(`- Match ${m.NoInTournament}: ${m.TeamAName} vs ${m.TeamBName} on ${m.LocalDate} at ${m.LocalTime}`));
-      }
+      console.log(`VisApiService: Loaded ${matches.length} matches for tournament ${tournamentNo}`);
       
       return matches;
     } catch (error) {
@@ -382,15 +378,10 @@ export class VisApiService implements IVisApiService {
 
   private static parseBeachMatchList(xmlText: string): BeachMatch[] {
     try {
-      console.log(`VisApiService: parseBeachMatchList called with XML length: ${xmlText.length}`);
-      console.log('VisApiService: XML preview:', xmlText.substring(0, 300));
       
       // Parse the BeachMatches XML format
       const matchMatches = xmlText.match(/<BeachMatch[^>]*\/>/g);
-      console.log(`VisApiService: Regex found ${matchMatches ? matchMatches.length : 0} BeachMatch tags`);
-      
       if (!matchMatches) {
-        console.log('VisApiService: No match tags found, returning empty array');
         return [];
       }
 
@@ -432,11 +423,6 @@ export class VisApiService implements IVisApiService {
         
         return beachMatch;
       });
-      
-      console.log(`VisApiService: Successfully parsed ${parsedMatches.length} matches`);
-      if (parsedMatches.length > 0) {
-        console.log('VisApiService: Sample parsed match:', JSON.stringify(parsedMatches[0], null, 2));
-      }
       
       return parsedMatches;
     } catch (error) {

@@ -139,9 +139,9 @@ const TournamentDetailScreenContent: React.FC = () => {
       // Mark onboarding as completed
       await TournamentStorageService.completeOnboarding();
       
-      // Navigate to referee dashboard
+      // Navigate to referee settings
       router.replace({
-        pathname: '/referee-dashboard',
+        pathname: '/referee-settings',
         params: { tournamentData: JSON.stringify(tournament) }
       });
     } catch (error) {
@@ -486,13 +486,27 @@ const TournamentDetailScreenContent: React.FC = () => {
                     const teamAWon = scoreA > scoreB;
                     const teamBWon = scoreB > scoreA;
                     
-                    // Debug: log match round info
+                    // Debug: Show detailed match data from VIS API
                     if (index === 0) {
-                      console.log('Sample match data:', {
-                        round: match.Round,
-                        status: match.Status,
-                        teamA: match.TeamAName,
-                        teamB: match.TeamBName
+                      console.log('🏐 COMPLETE MATCH DATA FROM VIS API:', {
+                        'Match Number': match.No,
+                        'Tournament Match #': match.NoInTournament,
+                        'Date': match.LocalDate,
+                        'Time': match.LocalTime,
+                        'Court': match.Court,
+                        'Round/Phase': match.Round,
+                        'Status': match.Status,
+                        'Team A': match.TeamAName,
+                        'Team B': match.TeamBName,
+                        'Match Score': `${match.MatchPointsA}-${match.MatchPointsB}`,
+                        'Set 1': `${match.PointsTeamASet1}-${match.PointsTeamBSet1}`,
+                        'Set 2': `${match.PointsTeamASet2}-${match.PointsTeamBSet2}`,
+                        'Set 3': `${match.PointsTeamASet3}-${match.PointsTeamBSet3}`,
+                        'Set Durations': `${match.DurationSet1}|${match.DurationSet2}|${match.DurationSet3}`,
+                        'Referee 1': `${match.Referee1Name} (${match.Referee1FederationCode})`,
+                        'Referee 2': `${match.Referee2Name} (${match.Referee2FederationCode})`,
+                        'Tournament Info': `${match.tournamentCode} (${match.tournamentGender})`,
+                        'Version': match.Version
                       });
                     }
                     
@@ -614,7 +628,7 @@ const TournamentDetailScreenContent: React.FC = () => {
           {isLoading ? (
             <ActivityIndicator color="#FFFFFF" size="small" />
           ) : (
-            <Text style={styles.switchButtonText}>Switch to this Tournament</Text>
+            <Text style={styles.switchButtonText}>Go to Ref Tools</Text>
           )}
         </TouchableOpacity>
       </View>

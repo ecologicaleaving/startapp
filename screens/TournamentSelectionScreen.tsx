@@ -35,16 +35,54 @@ const TournamentCard: React.FC<TournamentCardProps> = ({ tournament, onPress }) 
     }
   };
 
+  // Helper function to infer country from tournament name
+  const inferCountryFromName = (name?: string): string | undefined => {
+    if (!name) return undefined;
+    const nameLower = name.toLowerCase();
+    
+    if (nameLower.includes('dusseldorf') || nameLower.includes('düsseldorf')) return 'Germany';
+    if (nameLower.includes('hamburg') || nameLower.includes('berlin') || nameLower.includes('munich')) return 'Germany';
+    if (nameLower.includes('rome') || nameLower.includes('roma') || nameLower.includes('italy')) return 'Italy';
+    if (nameLower.includes('paris') || nameLower.includes('france')) return 'France';
+    if (nameLower.includes('madrid') || nameLower.includes('spain')) return 'Spain';
+    if (nameLower.includes('vienna') || nameLower.includes('austria')) return 'Austria';
+    if (nameLower.includes('doha') || nameLower.includes('qatar')) return 'Qatar';
+    if (nameLower.includes('tokyo') || nameLower.includes('japan')) return 'Japan';
+    if (nameLower.includes('sydney') || nameLower.includes('australia')) return 'Australia';
+    if (nameLower.includes('toronto') || nameLower.includes('vancouver') || nameLower.includes('canada') || nameLower.includes('montreal')) return 'Canada';
+    if (nameLower.includes('brazil') || nameLower.includes('rio') || nameLower.includes('sao paulo')) return 'Brazil';
+    if (nameLower.includes('usa') || nameLower.includes('america') || nameLower.includes('miami') || nameLower.includes('los angeles') || nameLower.includes('new york')) return 'USA';
+    if (nameLower.includes('poland') || nameLower.includes('warsaw') || nameLower.includes('krakow')) return 'Poland';
+    if (nameLower.includes('netherlands') || nameLower.includes('amsterdam') || nameLower.includes('den haag')) return 'Netherlands';
+    if (nameLower.includes('norway') || nameLower.includes('oslo')) return 'Norway';
+    if (nameLower.includes('sweden') || nameLower.includes('stockholm')) return 'Sweden';
+    if (nameLower.includes('denmark') || nameLower.includes('copenhagen')) return 'Denmark';
+    if (nameLower.includes('finland') || nameLower.includes('helsinki')) return 'Finland';
+    if (nameLower.includes('turkey') || nameLower.includes('istanbul') || nameLower.includes('ankara')) return 'Turkey';
+    if (nameLower.includes('mexico') || nameLower.includes('cancun') || nameLower.includes('acapulco')) return 'Mexico';
+    if (nameLower.includes('argentina') || nameLower.includes('buenos aires')) return 'Argentina';
+    if (nameLower.includes('chile') || nameLower.includes('santiago') || nameLower.includes('viña del mar')) return 'Chile';
+    
+    return undefined;
+  };
+
   const getLocation = () => {
     // Try different combinations of available location data
     const city = tournament.City;
     const country = tournament.CountryName || tournament.Country;
+    const inferredCountry = inferCountryFromName(tournament.Name);
     
     if (city && country) {
       return `${city}, ${country}`;
     }
     
-    return tournament.Location || city || country;
+    // If we inferred a country, show it
+    if (inferredCountry) {
+      const suffix = !country ? ` [Inferred: ${inferredCountry}]` : '';
+      return city ? `${city}, ${inferredCountry}${suffix}` : `${inferredCountry}${suffix}`;
+    }
+    
+    return tournament.Location || city || country || 'Unknown Location';
   };
 
   const getDateRange = () => {
