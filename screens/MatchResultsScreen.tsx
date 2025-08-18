@@ -7,18 +7,22 @@ import {
   RefreshControl,
   Alert,
   ActivityIndicator,
+  TouchableOpacity,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { MatchResultsService } from '../services/MatchResultsService';
 import { TournamentStorageService } from '../services/TournamentStorageService';
+import { AssignmentStatusProvider, useAssignmentStatus } from '../hooks/useAssignmentStatus';
 import { LiveMatchCard } from '../components/referee/LiveMatchCard';
 import { CompletedMatchCard } from '../components/referee/CompletedMatchCard';
+import { StatusIndicator } from '../components/Status/StatusIndicator';
 import { MatchResult, MatchResultsStatus } from '../types/MatchResults';
 import { useRouter } from 'expo-router';
 import NavigationHeader from '../components/navigation/NavigationHeader';
 import BottomTabNavigation from '../components/navigation/BottomTabNavigation';
+import { designTokens } from '../theme/tokens';
 
-export default function MatchResultsScreen() {
+const MatchResultsScreenContent: React.FC = () => {
   const router = useRouter();
   const [matchResults, setMatchResults] = useState<MatchResultsStatus>({
     live: [],
@@ -30,6 +34,18 @@ export default function MatchResultsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [selectedTournament, setSelectedTournament] = useState<string | null>(null);
   const [autoRefreshInterval, setAutoRefreshInterval] = useState<NodeJS.Timeout | null>(null);
+  
+  // Assignment status management
+  const { 
+    currentAssignmentStatus,
+    allStatuses,
+    statusCounts,
+    isOnline,
+    syncStatus,
+    updateAssignmentStatus,
+    getAssignmentsByStatus,
+    refreshStatuses
+  } = useAssignmentStatus();
 
   // Define refreshMatchResults first to avoid hoisting issues
   const refreshMatchResults = useCallback(async (silent = false) => {
@@ -43,6 +59,11 @@ export default function MatchResultsScreen() {
 
       const results = await MatchResultsService.getMatchResults(selectedTournament, true);
       setMatchResults(results);
+      
+      // Refresh assignment statuses to ensure consistency
+      if (!silent) {
+        refreshStatuses();
+      }
     } catch (error) {
       console.error('Failed to refresh match results:', error);
       if (!silent) {
@@ -57,7 +78,7 @@ export default function MatchResultsScreen() {
         setRefreshing(false);
       }
     }
-  }, [selectedTournament]);
+  }, [selectedTournament, refreshStatuses]);
 
   // Load tournament context
   useEffect(() => {
@@ -179,11 +200,30 @@ export default function MatchResultsScreen() {
   };
 
   const handleMatchPress = (match: MatchResult) => {
+    // Check if this match is associated with current assignment
+    if (currentAssignmentStatus && match.court && match.court.toString() === currentAssignmentStatus.courtNumber) {
+      // Update assignment status if this is the current assignment match
+      updateAssignmentStatus(currentAssignmentStatus.assignmentId, 'current', 'normal');
+    }
+    
     // Navigate to match detail screen
     router.push({
       pathname: '/match-detail',
       params: { matchNo: match.no, tournamentNo: match.tournamentNo },
     });
+  };
+
+  // Handle status bar press - navigate to current assignment if available
+  const handleStatusPress = () => {
+    if (currentAssignmentStatus) {
+      router.push('/my-assignments');
+    }
+  };
+
+  // Check if a match correlates with current assignment
+  const isCurrentAssignmentMatch = (match: MatchResult): boolean => {
+    return currentAssignmentStatus ? 
+      match.court?.toString() === currentAssignmentStatus.courtNumber : false;
   };
 
   const renderLoadingState = () => (
@@ -231,12 +271,22 @@ export default function MatchResultsScreen() {
         </View>
         {liveMatches.map((match) => {
           console.log(`MatchResults: Rendering live match ${match.no}: ${match.teamAName} vs ${match.teamBName}`);
+          const isCurrentAssignment = isCurrentAssignmentMatch(match);
           return (
-            <LiveMatchCard
-              key={match.no}
-              match={match}
-              onPress={handleMatchPress}
-            />
+            <View key={match.no} style={isCurrentAssignment ? styles.currentAssignmentMatch : null}>
+              <LiveMatchCard
+                key={match.no}
+                match={match}
+                onPress={handleMatchPress}
+              />
+              {isCurrentAssignment && (
+                <View style={styles.assignmentIndicator}>
+                  <Text style={styles.assignmentIndicatorText}>
+                    🏃 Your Current Assignment
+                  </Text>
+                </View>
+              )}
+            </View>
           );
         })}
       </View>
@@ -257,12 +307,22 @@ export default function MatchResultsScreen() {
         <Text style={styles.sectionTitle}>Completed Matches</Text>
         {completedMatches.map((match) => {
           console.log(`MatchResults: Rendering completed match ${match.no}: ${match.teamAName} vs ${match.teamBName}`);
+          const isCurrentAssignment = isCurrentAssignmentMatch(match);
           return (
-            <CompletedMatchCard
-              key={match.no}
-              match={match}
-              onPress={handleMatchPress}
-            />
+            <View key={match.no} style={isCurrentAssignment ? styles.currentAssignmentMatch : null}>
+              <CompletedMatchCard
+                key={match.no}
+                match={match}
+                onPress={handleMatchPress}
+              />
+              {isCurrentAssignment && (
+                <View style={styles.assignmentIndicator}>
+                  <Text style={styles.assignmentIndicatorText}>
+                    ✅ Your Assignment Complete
+                  </Text>
+                </View>
+              )}
+            </View>
           );
         })}
       </View>
@@ -302,6 +362,8 @@ export default function MatchResultsScreen() {
         <NavigationHeader
           title="Match Results"
           showBackButton={true}
+          showStatusBar={true}
+          onStatusPress={handleStatusPress}
         />
         {renderLoadingState()}
         <BottomTabNavigation currentTab="results" />
@@ -314,6 +376,34 @@ export default function MatchResultsScreen() {
       <NavigationHeader
         title="Match Results"
         showBackButton={true}
+        showStatusBar={true}
+        onStatusPress={handleStatusPress}
+        rightComponent={
+          <View style={styles.headerActions}>
+            {/* Status Badge Indicators */}
+            {statusCounts.current > 0 && (
+              <View style={[styles.statusBadge, { backgroundColor: designTokens.colors.success }]}>
+                <Text style={styles.statusBadgeText}>{statusCounts.current}</Text>
+              </View>
+            )}
+            {statusCounts.emergency > 0 && (
+              <View style={[styles.statusBadge, { backgroundColor: designTokens.colors.error }]}>
+                <Text style={styles.statusBadgeText}>{statusCounts.emergency}</Text>
+              </View>
+            )}
+            
+            {/* Offline/Network Status Indicator */}
+            {(!isOnline || syncStatus !== 'synced') && (
+              <View style={[styles.networkStatus, { 
+                backgroundColor: !isOnline ? designTokens.colors.error : designTokens.colors.warning 
+              }]}>
+                <Text style={styles.networkStatusText}>
+                  {!isOnline ? '📴' : '🔄'}
+                </Text>
+              </View>
+            )}
+          </View>
+        }
       />
       <ScrollView
         style={styles.scrollView}
@@ -322,14 +412,32 @@ export default function MatchResultsScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={() => refreshMatchResults(false)}
-            colors={['#10B981']}
-            tintColor="#10B981"
+            colors={[designTokens.colors.accent]}
+            tintColor={designTokens.colors.accent}
             title="Pull to refresh"
-            titleColor="#6B7280"
+            titleColor={designTokens.colors.textSecondary}
           />
         }
         accessibilityLabel="Match results list"
       >
+        {/* Assignment Status Context */}
+        {currentAssignmentStatus && (
+          <View style={styles.statusOverview}>
+            <StatusIndicator
+              type={currentAssignmentStatus.status}
+              size="large"
+              variant="prominent"
+              showIcon={true}
+              showText={true}
+              customLabel={`Current Assignment - Court ${currentAssignmentStatus.courtNumber}`}
+            />
+            {!isOnline && (
+              <Text style={styles.offlineText}>
+                📴 Offline Mode - Results may not reflect latest changes
+              </Text>
+            )}
+          </View>
+        )}
         {(() => {
           console.log('MatchResults: Making render decision:', { error, hasAnyMatches });
           
@@ -487,4 +595,91 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
   },
+  
+  // Status Integration Styles
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: designTokens.spacing.xs,
+  },
+  
+  statusBadge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  
+  statusBadgeText: {
+    color: designTokens.colors.background,
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  
+  networkStatus: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  
+  networkStatusText: {
+    fontSize: 12,
+  },
+  
+  statusOverview: {
+    padding: designTokens.spacing.md,
+    backgroundColor: designTokens.brandColors.primaryLight,
+    marginHorizontal: designTokens.spacing.md,
+    marginTop: designTokens.spacing.sm,
+    borderRadius: 12,
+    alignItems: 'center',
+    gap: designTokens.spacing.sm,
+  },
+  
+  offlineText: {
+    fontSize: 14,
+    color: designTokens.colors.error,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  
+  currentAssignmentMatch: {
+    borderWidth: 3,
+    borderColor: designTokens.colors.accent,
+    borderRadius: 12,
+    marginHorizontal: designTokens.spacing.sm,
+    marginVertical: 2,
+  },
+  
+  assignmentIndicator: {
+    backgroundColor: designTokens.colors.accent,
+    paddingHorizontal: designTokens.spacing.md,
+    paddingVertical: designTokens.spacing.xs,
+    marginHorizontal: designTokens.spacing.md,
+    marginTop: -8,
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 8,
+    alignItems: 'center',
+  },
+  
+  assignmentIndicatorText: {
+    color: designTokens.colors.background,
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
 });
+
+// Wrapper component with AssignmentStatusProvider
+const MatchResultsScreen: React.FC = () => {
+  return (
+    <AssignmentStatusProvider>
+      <MatchResultsScreenContent />
+    </AssignmentStatusProvider>
+  );
+};
+
+export default MatchResultsScreen;

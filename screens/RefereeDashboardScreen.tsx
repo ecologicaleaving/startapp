@@ -15,6 +15,7 @@ import BottomTabNavigation from '../components/navigation/BottomTabNavigation';
 import { DashboardCurrentCard as CurrentAssignmentCard, EnhancedCurrentAssignmentCard, AssignmentTimeline } from '../components/Dashboard';
 import { useCurrentAssignment } from '../hooks/useCurrentAssignment';
 import { StatusIndicator } from '../components/Status';
+import { AssignmentStatusProvider, useAssignmentStatus } from '../hooks/useAssignmentStatus';
 import { 
   HeroContent, 
   TournamentContext, 
@@ -27,7 +28,7 @@ import {
 import { designTokens } from '../theme/tokens';
 import { getEmergencyContacts, EmergencyContact } from '../utils/assignmentDashboard';
 
-const RefereeDashboardScreen: React.FC = () => {
+const RefereeDashboardScreenContent: React.FC = () => {
   const { tournamentData } = useLocalSearchParams<{ tournamentData: string }>();
   const router = useRouter();
   const [tournament, setTournament] = React.useState<Tournament>({} as Tournament);
@@ -48,6 +49,16 @@ const RefereeDashboardScreen: React.FC = () => {
   
   // Referee context for hierarchy optimization
   const refereeContext = useRefereeContext(currentAssignment, upcomingAssignments);
+  
+  // Assignment status management
+  const { 
+    currentAssignmentStatus,
+    statusCounts,
+    isOnline,
+    syncStatus,
+    updateAssignmentStatus,
+    refreshStatuses
+  } = useAssignmentStatus();
 
   // Load tournament from params or storage
   React.useEffect(() => {
@@ -157,9 +168,28 @@ const RefereeDashboardScreen: React.FC = () => {
     setRefreshing(true);
     try {
       await refreshAssignments();
+      refreshStatuses();
     } finally {
       setRefreshing(false);
     }
+  };
+
+  // Sync current assignment with status manager
+  React.useEffect(() => {
+    if (currentAssignment && !currentAssignmentStatus) {
+      // Initialize status for current assignment if not exists
+      updateAssignmentStatus(
+        currentAssignment.id,
+        'current',
+        'normal'
+      );
+    }
+  }, [currentAssignment, currentAssignmentStatus, updateAssignmentStatus]);
+
+  // Handle status press - navigate to assignment details
+  const handleStatusPress = () => {
+    console.log('Status bar pressed - navigating to assignments');
+    router.push('/my-assignments');
   };
   
   const renderEmergencyContact = (contact: EmergencyContact, index: number) => (
@@ -207,10 +237,25 @@ const RefereeDashboardScreen: React.FC = () => {
       <NavigationHeader
         title="Referee Dashboard"
         showBackButton={false}
+        showStatusBar={true}
+        onStatusPress={handleStatusPress}
         rightComponent={
-          <TouchableOpacity style={styles.switchButton} onPress={handleSwitchTournament}>
-            <Text style={styles.switchButtonText}>Switch</Text>
-          </TouchableOpacity>
+          <View style={styles.headerRightSection}>
+            {/* Status Badge Indicators */}
+            {statusCounts.emergency > 0 && (
+              <View style={[styles.statusBadge, { backgroundColor: designTokens.colors.error }]}>
+                <Text style={styles.statusBadgeText}>{statusCounts.emergency}</Text>
+              </View>
+            )}
+            {statusCounts.upcoming > 0 && (
+              <View style={[styles.statusBadge, { backgroundColor: designTokens.colors.secondary }]}>
+                <Text style={styles.statusBadgeText}>{statusCounts.upcoming}</Text>
+              </View>
+            )}
+            <TouchableOpacity style={styles.switchButton} onPress={handleSwitchTournament}>
+              <Text style={styles.switchButtonText}>Switch</Text>
+            </TouchableOpacity>
+          </View>
         }
       />
 
@@ -226,7 +271,14 @@ const RefereeDashboardScreen: React.FC = () => {
           />
         }
       >
-        {/* Tournament Context - Secondary Information */}
+        {/* Network Status Indicator */}
+        {!isOnline && (
+          <View style={styles.offlineIndicator}>
+            <Text style={styles.offlineText}>⚠️ Offline Mode - {syncStatus}</Text>
+          </View>
+        )}
+
+        {/* Tournament Context - Secondary Information with Status Integration */}
         <TournamentContext
           tournamentTitle={tournament.Title || `Tournament ${tournament.No}`}
           location={getLocation()}
@@ -481,6 +533,53 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: designTokens.colors.error,
   },
+  
+  // Status Integration Styles
+  headerRightSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: designTokens.spacing.xs,
+  },
+  
+  statusBadge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  
+  statusBadgeText: {
+    color: designTokens.colors.background,
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  
+  offlineIndicator: {
+    backgroundColor: designTokens.colors.warning,
+    paddingHorizontal: designTokens.spacing.md,
+    paddingVertical: designTokens.spacing.xs,
+    marginHorizontal: designTokens.spacing.md,
+    marginTop: designTokens.spacing.xs,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  
+  offlineText: {
+    color: designTokens.colors.background,
+    fontSize: 14,
+    fontWeight: '600',
+  },
 });
+
+// Wrapper component with AssignmentStatusProvider
+const RefereeDashboardScreen: React.FC = () => {
+  return (
+    <AssignmentStatusProvider>
+      <RefereeDashboardScreenContent />
+    </AssignmentStatusProvider>
+  );
+};
 
 export default RefereeDashboardScreen;

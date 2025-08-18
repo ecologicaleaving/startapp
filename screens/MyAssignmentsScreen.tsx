@@ -14,6 +14,7 @@ import { useRouter } from 'expo-router';
 import { Assignment } from '../types/assignments';
 import { useCurrentAssignment } from '../hooks/useCurrentAssignment';
 import { useAssignmentPreparation } from '../hooks/useAssignmentPreparation';
+import { AssignmentStatusProvider, useAssignmentStatus } from '../hooks/useAssignmentStatus';
 import { AssignmentTimeline, TimelineView } from '../components/Dashboard/AssignmentTimeline';
 import { EnhancedAssignmentCard } from '../components/Assignment/EnhancedAssignmentCard';
 import { AssignmentStatusManager } from '../components/Assignment/AssignmentStatusManager';
@@ -23,7 +24,7 @@ import BottomTabNavigation from '../components/navigation/BottomTabNavigation';
 import { designTokens } from '../theme/tokens';
 import { assignmentNavigation } from '../utils/assignmentNavigation';
 
-export const MyAssignmentsScreen: React.FC = () => {
+const MyAssignmentsScreenContent: React.FC = () => {
   const router = useRouter();
   
   // Initialize navigation helper
@@ -50,13 +51,25 @@ export const MyAssignmentsScreen: React.FC = () => {
     preparations,
     getPreparation,
     savePreparation,
-    updateAssignmentStatus,
+    updateAssignmentStatus: updatePreparationStatus,
     detectScheduleConflicts,
-    isOffline,
+    isOffline: preparationOffline,
     syncPending,
     lastSyncTime,
     syncPendingData,
   } = useAssignmentPreparation();
+
+  // Assignment status management
+  const { 
+    currentAssignmentStatus,
+    allStatuses,
+    statusCounts,
+    isOnline,
+    syncStatus,
+    updateAssignmentStatus,
+    getAssignmentsByStatus,
+    refreshStatuses
+  } = useAssignmentStatus();
 
   // Combine all assignments for comprehensive view
   const allAssignments = React.useMemo(() => {
@@ -95,14 +108,16 @@ export const MyAssignmentsScreen: React.FC = () => {
 
   const handleStatusUpdate = useCallback(async (assignmentId: string, newStatus: any) => {
     try {
-      await updateAssignmentStatus(assignmentId, newStatus, selectedAssignment || undefined);
+      // Update both assignment status and preparation status
+      await updateAssignmentStatus(assignmentId, newStatus, 'normal');
+      await updatePreparationStatus(assignmentId, newStatus, selectedAssignment || undefined);
       await refreshAssignments();
       setStatusModalVisible(false);
       setSelectedAssignment(null);
     } catch (error) {
       console.error('Failed to update assignment status:', error);
     }
-  }, [updateAssignmentStatus, refreshAssignments, selectedAssignment]);
+  }, [updateAssignmentStatus, updatePreparationStatus, refreshAssignments, selectedAssignment]);
 
   const handlePreparationUpdate = useCallback(async (preparation: any) => {
     try {
@@ -114,7 +129,8 @@ export const MyAssignmentsScreen: React.FC = () => {
 
   const handleRefresh = useCallback(async () => {
     await refreshAssignments();
-  }, [refreshAssignments]);
+    refreshStatuses();
+  }, [refreshAssignments, refreshStatuses]);
 
   // Loading state
   if (assignmentsLoading) {
@@ -162,8 +178,26 @@ export const MyAssignmentsScreen: React.FC = () => {
       <NavigationHeader
         title="My Assignments"
         showBackButton={true}
+        showStatusBar={true}
+        onStatusPress={() => {
+          if (currentAssignmentStatus) {
+            handleAssignmentPress(currentAssignment!);
+          }
+        }}
         rightComponent={
           <View style={styles.headerActions}>
+            {/* Status Badge Indicators */}
+            {statusCounts.emergency > 0 && (
+              <View style={[styles.statusBadge, { backgroundColor: designTokens.colors.error }]}>
+                <Text style={styles.statusBadgeText}>{statusCounts.emergency}</Text>
+              </View>
+            )}
+            {statusCounts.upcoming > 0 && (
+              <View style={[styles.statusBadge, { backgroundColor: designTokens.colors.secondary }]}>
+                <Text style={styles.statusBadgeText}>{statusCounts.upcoming}</Text>
+              </View>
+            )}
+            
             {/* View Mode Toggle */}
             <TouchableOpacity
               style={[
@@ -208,21 +242,23 @@ export const MyAssignmentsScreen: React.FC = () => {
             customLabel={currentAssignment ? 'Active Assignment' : 'No Active Assignment'}
           />
           
-          {/* Offline/Sync Status */}
-          {(isOffline || syncPending) && (
+          {/* Network and Sync Status */}
+          {(!isOnline || syncStatus !== 'synced' || syncPending) && (
             <View style={styles.syncStatus}>
               <Text style={[
                 styles.syncStatusText,
-                { color: isOffline ? designTokens.colors.error : designTokens.colors.warning }
+                { color: !isOnline ? designTokens.colors.error : designTokens.colors.warning }
               ]}>
-                {isOffline ? '📴 Offline Mode' : '🔄 Sync Pending'}
+                {!isOnline ? '📴 Offline Mode' : 
+                 syncStatus === 'syncing' ? '🔄 Syncing...' : 
+                 syncPending ? '🔄 Sync Pending' : '⚠️ Sync Required'}
               </Text>
               {lastSyncTime && (
                 <Text style={styles.lastSyncText}>
                   Last sync: {lastSyncTime.toLocaleTimeString()}
                 </Text>
               )}
-              {syncPending && !isOffline && (
+              {syncPending && isOnline && (
                 <TouchableOpacity 
                   style={styles.syncButton}
                   onPress={syncPendingData}
@@ -491,4 +527,32 @@ const styles = StyleSheet.create({
   footer: {
     height: designTokens.spacing.xl,
   },
+  
+  // Status Integration Styles
+  statusBadge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    marginRight: designTokens.spacing.xs,
+  },
+  
+  statusBadgeText: {
+    color: designTokens.colors.background,
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
 });
+
+// Wrapper component with AssignmentStatusProvider
+export const MyAssignmentsScreen: React.FC = () => {
+  return (
+    <AssignmentStatusProvider>
+      <MyAssignmentsScreenContent />
+    </AssignmentStatusProvider>
+  );
+};
+
+export default MyAssignmentsScreen;

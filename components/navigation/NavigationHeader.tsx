@@ -7,6 +7,7 @@ import {
   SafeAreaView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { GlobalStatusBar } from './GlobalStatusBar';
 
 interface NavigationHeaderProps {
   title: string;
@@ -15,6 +16,8 @@ interface NavigationHeaderProps {
   rightComponent?: React.ReactNode;
   backgroundColor?: string;
   titleColor?: string;
+  showStatusBar?: boolean;
+  onStatusPress?: () => void;
 }
 
 export const NavigationHeader: React.FC<NavigationHeaderProps> = ({
@@ -24,6 +27,8 @@ export const NavigationHeader: React.FC<NavigationHeaderProps> = ({
   rightComponent,
   backgroundColor = '#1B365D',
   titleColor = '#FFFFFF',
+  showStatusBar = true,
+  onStatusPress,
 }) => {
   const router = useRouter();
 
@@ -43,6 +48,14 @@ export const NavigationHeader: React.FC<NavigationHeaderProps> = ({
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor }]}>
+      {/* Global Status Bar Integration */}
+      {showStatusBar && (
+        <GlobalStatusBar 
+          onStatusPress={onStatusPress} 
+          compact={false}
+        />
+      )}
+      
       <View style={[styles.container, { backgroundColor }]}>
         <View style={styles.leftSection}>
           {showBackButton && (

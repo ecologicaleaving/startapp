@@ -11,8 +11,12 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Tournament } from '../types/tournament';
 import { TournamentStorageService } from '../services/TournamentStorageService';
+import { AssignmentStatusProvider, useAssignmentStatus } from '../hooks/useAssignmentStatus';
+import { StatusIndicator } from '../components/Status/StatusIndicator';
+import NavigationHeader from '../components/navigation/NavigationHeader';
+import { designTokens } from '../theme/tokens';
 
-const TournamentDetailScreen: React.FC = () => {
+const TournamentDetailScreenContent: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
   const { tournamentData } = useLocalSearchParams<{ tournamentData: string }>();
@@ -24,6 +28,18 @@ const TournamentDetailScreen: React.FC = () => {
       return {} as Tournament;
     }
   }, [tournamentData]);
+
+  // Assignment status management
+  const { 
+    currentAssignmentStatus,
+    allStatuses,
+    statusCounts,
+    isOnline,
+    syncStatus,
+    updateAssignmentStatus,
+    getAssignmentsByStatus,
+    refreshStatuses
+  } = useAssignmentStatus();
 
   const formatDate = (dateStr?: string) => {
     if (!dateStr) return '';
@@ -124,6 +140,20 @@ const TournamentDetailScreen: React.FC = () => {
     router.back();
   };
 
+  // Handle status bar press - navigate to assignments if available
+  const handleStatusPress = () => {
+    if (currentAssignmentStatus) {
+      router.push('/my-assignments');
+    }
+  };
+
+  // Check if this tournament has active assignments
+  const hasActiveAssignments = () => {
+    if (!currentAssignmentStatus) return false;
+    // Simple check - could be enhanced to check tournament context
+    return statusCounts.current > 0 || statusCounts.upcoming > 0;
+  };
+
   if (!tournament.No) {
     return (
       <View style={styles.errorContainer}>
@@ -137,13 +167,41 @@ const TournamentDetailScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
+      {/* Navigation Header with Status Integration */}
+      <NavigationHeader
+        title="Tournament Details"
+        showBackButton={true}
+        showStatusBar={true}
+        onStatusPress={handleStatusPress}
+        rightComponent={
+          <View style={styles.headerActions}>
+            {/* Status Badge Indicators */}
+            {statusCounts.current > 0 && (
+              <View style={[styles.statusBadge, { backgroundColor: designTokens.colors.success }]}>
+                <Text style={styles.statusBadgeText}>{statusCounts.current}</Text>
+              </View>
+            )}
+            {statusCounts.upcoming > 0 && (
+              <View style={[styles.statusBadge, { backgroundColor: designTokens.colors.secondary }]}>
+                <Text style={styles.statusBadgeText}>{statusCounts.upcoming}</Text>
+              </View>
+            )}
+            
+            {/* Network Status Indicator */}
+            {(!isOnline || syncStatus !== 'synced') && (
+              <View style={[styles.networkStatus, { 
+                backgroundColor: !isOnline ? designTokens.colors.error : designTokens.colors.warning 
+              }]}>
+                <Text style={styles.networkStatusText}>
+                  {!isOnline ? '📴' : '🔄'}
+                </Text>
+              </View>
+            )}
+          </View>
+        }
+      />
+
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={handleGoBack}>
-            <Text style={styles.backButtonText}>← Back</Text>
-          </TouchableOpacity>
-        </View>
 
         {/* Tournament Card */}
         <View style={styles.tournamentCard}>
@@ -192,9 +250,45 @@ const TournamentDetailScreen: React.FC = () => {
           </View>
         </View>
 
+        {/* Assignment Status Context */}
+        {hasActiveAssignments() && (
+          <View style={styles.statusSection}>
+            <StatusIndicator
+              type={currentAssignmentStatus?.status || 'current'}
+              size="large"
+              variant="prominent"
+              showIcon={true}
+              showText={true}
+              customLabel="Assignment Status for This Tournament"
+            />
+            <View style={styles.statusGrid}>
+              <View style={styles.statusItem}>
+                <Text style={styles.statusCount}>{statusCounts.current}</Text>
+                <Text style={styles.statusLabel}>Current</Text>
+              </View>
+              <View style={styles.statusItem}>
+                <Text style={styles.statusCount}>{statusCounts.upcoming}</Text>
+                <Text style={styles.statusLabel}>Upcoming</Text>
+              </View>
+              <View style={styles.statusItem}>
+                <Text style={styles.statusCount}>{statusCounts.completed}</Text>
+                <Text style={styles.statusLabel}>Completed</Text>
+              </View>
+            </View>
+            
+            {!isOnline && (
+              <View style={styles.offlineWarning}>
+                <Text style={styles.offlineText}>
+                  📴 Offline Mode - Assignment status may not be current
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+
         {/* Information Section */}
         <View style={styles.infoSection}>
-          <Text style={styles.infoTitle}>Referee Information</Text>
+          <Text style={styles.infoTitle}>Tournament Information</Text>
           <Text style={styles.infoText}>
             By selecting this tournament, you'll have access to:
           </Text>
@@ -202,6 +296,7 @@ const TournamentDetailScreen: React.FC = () => {
             <Text style={styles.featureItem}>• Match assignments and schedules</Text>
             <Text style={styles.featureItem}>• Real-time match results</Text>
             <Text style={styles.featureItem}>• Court information and updates</Text>
+            <Text style={styles.featureItem}>• Assignment status tracking</Text>
             <Text style={styles.featureItem}>• Push notifications for upcoming matches</Text>
           </View>
         </View>
@@ -416,6 +511,104 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
   },
+  
+  // Status Integration Styles
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: designTokens.spacing.xs,
+  },
+  
+  statusBadge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  
+  statusBadgeText: {
+    color: designTokens.colors.background,
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  
+  networkStatus: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  
+  networkStatusText: {
+    fontSize: 12,
+  },
+  
+  statusSection: {
+    margin: 24,
+    padding: 20,
+    backgroundColor: designTokens.brandColors.primaryLight,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: designTokens.colors.primary,
+    alignItems: 'center',
+    gap: designTokens.spacing.md,
+  },
+  
+  statusGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    width: '100%',
+    gap: designTokens.spacing.md,
+  },
+  
+  statusItem: {
+    flex: 1,
+    alignItems: 'center',
+    padding: designTokens.spacing.sm,
+    backgroundColor: designTokens.colors.background,
+    borderRadius: 8,
+  },
+  
+  statusCount: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: designTokens.colors.primary,
+    marginBottom: 4,
+  },
+  
+  statusLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: designTokens.colors.textSecondary,
+    textTransform: 'uppercase',
+  },
+  
+  offlineWarning: {
+    backgroundColor: designTokens.colors.error,
+    paddingHorizontal: designTokens.spacing.md,
+    paddingVertical: designTokens.spacing.xs,
+    borderRadius: 8,
+    alignSelf: 'stretch',
+  },
+  
+  offlineText: {
+    color: designTokens.colors.background,
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
 });
+
+// Wrapper component with AssignmentStatusProvider
+const TournamentDetailScreen: React.FC = () => {
+  return (
+    <AssignmentStatusProvider>
+      <TournamentDetailScreenContent />
+    </AssignmentStatusProvider>
+  );
+};
 
 export default TournamentDetailScreen;

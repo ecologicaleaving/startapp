@@ -7,6 +7,8 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Assignment } from '@/types/assignments';
 import { designTokens } from '@/theme/tokens';
+
+// Design tokens successfully loaded with safe fallbacks
 import { StatusIndicator } from '@/components/Status';
 import { HeroContent, ContextSensitiveDisplay, TimeSensitiveContent, useRefereeContext } from '@/components/Hierarchy';
 import { CourtNumber, VisualHierarchyText } from '@/components/Hierarchy/VisualHierarchyText';
@@ -59,11 +61,15 @@ export const EnhancedCurrentAssignmentCard: React.FC<EnhancedCurrentAssignmentCa
     }
   }, []);
 
-  const formatTeams = React.useCallback((teams: string[]) => {
-    if (teams.length >= 2) {
-      return `${teams[0]} vs ${teams[1]}`;
+  const formatTeams = React.useCallback((teams: (string | undefined)[]) => {
+    const validTeams = teams.filter(team => team && team.trim());
+    if (validTeams.length === 0) {
+      return 'Teams TBD';
     }
-    return teams.join(', ') || 'Teams TBD';
+    if (validTeams.length >= 2) {
+      return `${validTeams[0]} vs ${validTeams[1]}`;
+    }
+    return validTeams.join(', ');
   }, []);
 
   const getUrgencyLevel = (): 'immediate' | 'urgent' | 'normal' => {
@@ -158,7 +164,7 @@ export const EnhancedCurrentAssignmentCard: React.FC<EnhancedCurrentAssignmentCa
               emphasis="normal"
               style={styles.teams}
             >
-              {formatTeams(assignment.teams)}
+              {formatTeams([assignment.homeTeam, assignment.awayTeam])}
             </VisualHierarchyText>
             {assignment.matchType && (
               <VisualHierarchyText 
@@ -249,7 +255,7 @@ const styles = StyleSheet.create({
   },
 
   priorityBadge: {
-    backgroundColor: designTokens.colors.error,
+    backgroundColor: designTokens.colors?.error || '#8B1538',
     paddingHorizontal: designTokens.spacing.sm,
     paddingVertical: 4,
     borderRadius: 4,
@@ -257,7 +263,7 @@ const styles = StyleSheet.create({
   },
 
   priorityText: {
-    color: designTokens.colors.background,
+    color: designTokens.colors?.background || '#FFFFFF',
     fontSize: 12,
     fontWeight: 'bold',
     letterSpacing: 0.5,
@@ -271,7 +277,7 @@ const styles = StyleSheet.create({
   courtType: {
     marginTop: designTokens.spacing.xs,
     textAlign: 'center',
-    color: designTokens.colors.textSecondary,
+    color: designTokens.colors?.textSecondary || '#445566',
   },
 
   timeSection: {
@@ -296,7 +302,7 @@ const styles = StyleSheet.create({
 
   matchType: {
     textAlign: 'center',
-    color: designTokens.colors.textSecondary,
+    color: designTokens.colors?.textSecondary || '#445566',
   },
 
   contextSection: {
@@ -320,18 +326,18 @@ const styles = StyleSheet.create({
   contextLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: designTokens.colors.textSecondary,
+    color: designTokens.colors?.textSecondary || '#445566',
     marginRight: designTokens.spacing.xs,
   },
 
   contextValue: {
     fontSize: 14,
     fontWeight: 'bold',
-    color: designTokens.colors.textPrimary,
+    color: designTokens.colors?.textPrimary || '#2C3E50',
   },
 
   importance: {
-    color: designTokens.colors.error,
+    color: designTokens.colors?.error || '#8B1538',
   },
 
   actionsSection: {
@@ -352,31 +358,31 @@ const styles = StyleSheet.create({
   },
 
   primaryAction: {
-    backgroundColor: designTokens.colors.primary,
+    backgroundColor: designTokens.colors?.primary || '#1B365D',
   },
 
   secondaryAction: {
-    backgroundColor: designTokens.colors.secondary,
+    backgroundColor: designTokens.colors?.secondary || '#2B5F75',
   },
 
   tertiaryAction: {
-    backgroundColor: designTokens.colors.accent,
+    backgroundColor: designTokens.colors?.accent || '#B8391A',
   },
 
   primaryActionText: {
-    color: designTokens.colors.background,
+    color: designTokens.colors?.background || '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
   },
 
   secondaryActionText: {
-    color: designTokens.colors.background,
+    color: designTokens.colors?.background || '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
   },
 
   tertiaryActionText: {
-    color: designTokens.colors.background,
+    color: designTokens.colors?.background || '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
   },
@@ -392,6 +398,6 @@ const styles = StyleSheet.create({
   emergencyText: {
     fontSize: 14,
     fontWeight: '600',
-    color: designTokens.colors.error,
+    color: designTokens.colors?.error || '#8B1538',
   },
 });

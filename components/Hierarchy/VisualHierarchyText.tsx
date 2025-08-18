@@ -126,7 +126,7 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({
 
 const styles = StyleSheet.create({
   baseText: {
-    fontFamily: designTokens.typography.fontFamily.primary,
+    // Use system default font family for React Native
   },
 
   // Variant Styles

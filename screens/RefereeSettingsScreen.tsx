@@ -15,8 +15,11 @@ import {
 import { useRouter } from 'expo-router';
 import { TournamentStorageService, UserPreferences } from '../services/TournamentStorageService';
 import { VisApiService } from '../services/visApi';
+import { AssignmentStatusProvider, useAssignmentStatus } from '../hooks/useAssignmentStatus';
+import { StatusIndicator } from '../components/Status/StatusIndicator';
 import NavigationHeader from '../components/navigation/NavigationHeader';
 import BottomTabNavigation from '../components/navigation/BottomTabNavigation';
+import { designTokens } from '../theme/tokens';
 
 interface RefereeFromDB {
   No: string;
@@ -34,7 +37,7 @@ interface RefereeProfile {
   languages: string[];
 }
 
-const RefereeSettingsScreen: React.FC = () => {
+const RefereeSettingsScreenContent: React.FC = () => {
   const router = useRouter();
   const [profile, setProfile] = useState<RefereeProfile>({
     refereeNo: '',
@@ -52,6 +55,25 @@ const RefereeSettingsScreen: React.FC = () => {
   const [loadingReferees, setLoadingReferees] = useState(false);
   const [showRefereeList, setShowRefereeList] = useState(false);
   const [selectedTournament, setSelectedTournament] = useState<string | null>(null);
+
+  // Assignment status management
+  const { 
+    currentAssignmentStatus,
+    allStatuses,
+    statusCounts,
+    isOnline,
+    syncStatus,
+    updateAssignmentStatus,
+    getAssignmentsByStatus,
+    refreshStatuses
+  } = useAssignmentStatus();
+
+  // Additional status notification preferences
+  const [statusNotifications, setStatusNotifications] = useState({
+    urgencyAlerts: true,
+    statusChanges: true,
+    offlineSync: true,
+  });
 
   useEffect(() => {
     loadSettings();
@@ -186,6 +208,40 @@ const RefereeSettingsScreen: React.FC = () => {
     }
   };
 
+  // Handle status notification preferences
+  const handleToggleStatusNotification = (type: keyof typeof statusNotifications, enabled: boolean) => {
+    setStatusNotifications(prev => ({ ...prev, [type]: enabled }));
+    // TODO: Save to storage or sync with assignment status service
+    console.log(`Status notification ${type} set to:`, enabled);
+  };
+
+  // Handle status bar press
+  const handleStatusPress = () => {
+    if (currentAssignmentStatus) {
+      router.push('/my-assignments');
+    }
+  };
+
+  // Handle assignment status data management  
+  const handleClearStatusData = () => {
+    Alert.alert(
+      'Clear Assignment Status Data',
+      'This will clear all assignment status tracking data. Are you sure?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: () => {
+            // TODO: Clear assignment status data
+            refreshStatuses();
+            Alert.alert('Success', 'Assignment status data cleared.');
+          },
+        },
+      ]
+    );
+  };
+
   const handleResetApp = async () => {
     Alert.alert(
       'Reset App Data',
@@ -313,9 +369,64 @@ const RefereeSettingsScreen: React.FC = () => {
     </View>
   );
 
+  const renderAssignmentStatusSection = () => (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>Assignment Status</Text>
+      
+      {/* Current Status Display */}
+      {currentAssignmentStatus ? (
+        <View style={styles.statusDisplay}>
+          <StatusIndicator
+            type={currentAssignmentStatus.status}
+            size="large"
+            variant="prominent"
+            showIcon={true}
+            showText={true}
+            customLabel={`Court ${currentAssignmentStatus.courtNumber}`}
+          />
+          <View style={styles.statusGrid}>
+            <View style={styles.statusItem}>
+              <Text style={styles.statusCount}>{statusCounts.current}</Text>
+              <Text style={styles.statusLabel}>Current</Text>
+            </View>
+            <View style={styles.statusItem}>
+              <Text style={styles.statusCount}>{statusCounts.upcoming}</Text>
+              <Text style={styles.statusLabel}>Upcoming</Text>
+            </View>
+            <View style={styles.statusItem}>
+              <Text style={styles.statusCount}>{statusCounts.completed}</Text>
+              <Text style={styles.statusLabel}>Completed</Text>
+            </View>
+          </View>
+          
+          {/* Network Status */}
+          <View style={styles.networkStatusDisplay}>
+            <Text style={styles.networkLabel}>Status Sync:</Text>
+            <Text style={[styles.networkValue, { 
+              color: isOnline ? designTokens.colors.success : designTokens.colors.error 
+            }]}>
+              {isOnline ? (syncStatus === 'synced' ? '✅ Synced' : '🔄 Syncing...') : '📴 Offline'}
+            </Text>
+          </View>
+        </View>
+      ) : (
+        <Text style={styles.noStatusText}>No active assignment status</Text>
+      )}
+      
+      {/* Status Management Actions */}
+      <TouchableOpacity style={styles.statusAction} onPress={() => router.push('/my-assignments')}>
+        <Text style={styles.statusActionText}>View All Assignments</Text>
+      </TouchableOpacity>
+      
+      <TouchableOpacity style={[styles.statusAction, styles.dangerStatusAction]} onPress={handleClearStatusData}>
+        <Text style={[styles.statusActionText, styles.dangerActionText]}>Clear Status Data</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   const renderPreferencesSection = () => (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>App Preferences</Text>
+      <Text style={styles.sectionTitle}>Notification Preferences</Text>
       
       <View style={styles.preferenceRow}>
         <View style={styles.preferenceInfo}>
@@ -327,8 +438,53 @@ const RefereeSettingsScreen: React.FC = () => {
         <Switch
           value={preferences.notificationsEnabled}
           onValueChange={handleToggleNotifications}
-          trackColor={{ false: '#ccc', true: '#FF6B35' }}
+          trackColor={{ false: '#ccc', true: designTokens.colors.accent }}
           thumbColor={preferences.notificationsEnabled ? '#fff' : '#f4f3f4'}
+        />
+      </View>
+
+      <View style={styles.preferenceRow}>
+        <View style={styles.preferenceInfo}>
+          <Text style={styles.preferenceTitle}>Urgency Alerts</Text>
+          <Text style={styles.preferenceDescription}>
+            Critical warnings for time-sensitive assignments
+          </Text>
+        </View>
+        <Switch
+          value={statusNotifications.urgencyAlerts}
+          onValueChange={(enabled) => handleToggleStatusNotification('urgencyAlerts', enabled)}
+          trackColor={{ false: '#ccc', true: designTokens.colors.error }}
+          thumbColor={statusNotifications.urgencyAlerts ? '#fff' : '#f4f3f4'}
+        />
+      </View>
+
+      <View style={styles.preferenceRow}>
+        <View style={styles.preferenceInfo}>
+          <Text style={styles.preferenceTitle}>Status Change Alerts</Text>
+          <Text style={styles.preferenceDescription}>
+            Notifications when assignment status changes
+          </Text>
+        </View>
+        <Switch
+          value={statusNotifications.statusChanges}
+          onValueChange={(enabled) => handleToggleStatusNotification('statusChanges', enabled)}
+          trackColor={{ false: '#ccc', true: designTokens.colors.secondary }}
+          thumbColor={statusNotifications.statusChanges ? '#fff' : '#f4f3f4'}
+        />
+      </View>
+
+      <View style={styles.preferenceRow}>
+        <View style={styles.preferenceInfo}>
+          <Text style={styles.preferenceTitle}>Offline Sync Alerts</Text>
+          <Text style={styles.preferenceDescription}>
+            Notifications about offline data sync status
+          </Text>
+        </View>
+        <Switch
+          value={statusNotifications.offlineSync}
+          onValueChange={(enabled) => handleToggleStatusNotification('offlineSync', enabled)}
+          trackColor={{ false: '#ccc', true: designTokens.colors.warning }}
+          thumbColor={statusNotifications.offlineSync ? '#fff' : '#f4f3f4'}
         />
       </View>
     </View>
@@ -354,6 +510,8 @@ const RefereeSettingsScreen: React.FC = () => {
         <NavigationHeader
           title="Settings"
           showBackButton={true}
+          showStatusBar={true}
+          onStatusPress={handleStatusPress}
         />
         <View style={styles.centerContainer}>
           <Text>Loading settings...</Text>
@@ -368,9 +526,38 @@ const RefereeSettingsScreen: React.FC = () => {
       <NavigationHeader
         title="Settings"
         showBackButton={true}
+        showStatusBar={true}
+        onStatusPress={handleStatusPress}
+        rightComponent={
+          <View style={styles.headerActions}>
+            {/* Status Badge Indicators */}
+            {statusCounts.current > 0 && (
+              <View style={[styles.statusBadge, { backgroundColor: designTokens.colors.success }]}>
+                <Text style={styles.statusBadgeText}>{statusCounts.current}</Text>
+              </View>
+            )}
+            {statusCounts.upcoming > 0 && (
+              <View style={[styles.statusBadge, { backgroundColor: designTokens.colors.secondary }]}>
+                <Text style={styles.statusBadgeText}>{statusCounts.upcoming}</Text>
+              </View>
+            )}
+            
+            {/* Network Status Indicator */}
+            {(!isOnline || syncStatus !== 'synced') && (
+              <View style={[styles.networkStatus, { 
+                backgroundColor: !isOnline ? designTokens.colors.error : designTokens.colors.warning 
+              }]}>
+                <Text style={styles.networkStatusText}>
+                  {!isOnline ? '📴' : '🔄'}
+                </Text>
+              </View>
+            )}
+          </View>
+        }
       />
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        {renderAssignmentStatusSection()}
         {renderProfileSection()}
         {renderPreferencesSection()}
         {renderAppSection()}
@@ -631,6 +818,139 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6b7280',
   },
+  
+  // Status Integration Styles
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: designTokens.spacing.xs,
+  },
+  
+  statusBadge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  
+  statusBadgeText: {
+    color: designTokens.colors.background,
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  
+  networkStatus: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  
+  networkStatusText: {
+    fontSize: 12,
+  },
+  
+  statusDisplay: {
+    alignItems: 'center',
+    marginBottom: designTokens.spacing.md,
+  },
+  
+  statusGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    width: '100%',
+    marginVertical: designTokens.spacing.md,
+    gap: designTokens.spacing.sm,
+  },
+  
+  statusItem: {
+    flex: 1,
+    alignItems: 'center',
+    padding: designTokens.spacing.sm,
+    backgroundColor: designTokens.brandColors.primaryLight,
+    borderRadius: 8,
+  },
+  
+  statusCount: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: designTokens.colors.primary,
+    marginBottom: 4,
+  },
+  
+  statusLabel: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: designTokens.colors.textSecondary,
+    textTransform: 'uppercase',
+  },
+  
+  networkStatusDisplay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    paddingHorizontal: designTokens.spacing.md,
+    paddingVertical: designTokens.spacing.xs,
+    backgroundColor: designTokens.brandColors.primaryLight,
+    borderRadius: 8,
+  },
+  
+  networkLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: designTokens.colors.textPrimary,
+  },
+  
+  networkValue: {
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  
+  noStatusText: {
+    fontSize: 14,
+    color: designTokens.colors.textSecondary,
+    textAlign: 'center',
+    fontStyle: 'italic',
+    padding: designTokens.spacing.md,
+    backgroundColor: designTokens.brandColors.primaryLight,
+    borderRadius: 8,
+    marginBottom: designTokens.spacing.md,
+  },
+  
+  statusAction: {
+    backgroundColor: designTokens.colors.secondary,
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  
+  statusActionText: {
+    color: designTokens.colors.background,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  
+  dangerStatusAction: {
+    backgroundColor: designTokens.colors.error,
+  },
+  
+  dangerActionText: {
+    color: designTokens.colors.background,
+  },
 });
+
+// Wrapper component with AssignmentStatusProvider
+const RefereeSettingsScreen: React.FC = () => {
+  return (
+    <AssignmentStatusProvider>
+      <RefereeSettingsScreenContent />
+    </AssignmentStatusProvider>
+  );
+};
 
 export default RefereeSettingsScreen;

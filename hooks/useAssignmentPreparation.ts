@@ -37,6 +37,64 @@ export const useAssignmentPreparation = () => {
     lastSyncTime: null,
   });
 
+  // Add item to pending sync queue - MOVED UP TO PREVENT HOISTING ISSUES
+  const addToPendingSync = useCallback(async (type: string, data: any) => {
+    try {
+      const existingData = await AsyncStorage.getItem(STORAGE_KEYS.PENDING_SYNC);
+      const syncItems = existingData ? JSON.parse(existingData) : [];
+      
+      syncItems.push({
+        type,
+        data,
+        timestamp: new Date().toISOString(),
+      });
+      
+      await AsyncStorage.setItem(STORAGE_KEYS.PENDING_SYNC, JSON.stringify(syncItems));
+      
+      setState(prev => ({ ...prev, syncPending: true }));
+    } catch (error) {
+      console.error('Failed to add to pending sync:', error);
+    }
+  }, []);
+
+  // Sync pending data when network becomes available
+  const syncPendingData = useCallback(async () => {
+    try {
+      const pendingData = await AsyncStorage.getItem(STORAGE_KEYS.PENDING_SYNC);
+      if (!pendingData) return;
+
+      const syncItems = JSON.parse(pendingData) as Array<{
+        type: 'preparation' | 'status' | 'note';
+        data: any;
+        timestamp: string;
+      }>;
+
+      // Process each pending item
+      for (const item of syncItems) {
+        try {
+          // In a real implementation, this would sync with API
+          await new Promise(resolve => setTimeout(resolve, 100));
+          console.log('Synced offline item:', item.type, item.timestamp);
+        } catch (error) {
+          console.error('Failed to sync item:', error);
+        }
+      }
+
+      // Clear pending sync data
+      await AsyncStorage.removeItem(STORAGE_KEYS.PENDING_SYNC);
+      await AsyncStorage.setItem(STORAGE_KEYS.LAST_SYNC, new Date().toISOString());
+
+      setState(prev => ({
+        ...prev,
+        syncPending: false,
+        lastSyncTime: new Date(),
+      }));
+
+    } catch (error) {
+      console.error('Failed to sync pending data:', error);
+    }
+  }, []);
+
   // Load preparation data with offline support
   const loadPreparationData = useCallback(async () => {
     try {
@@ -108,7 +166,7 @@ export const useAssignmentPreparation = () => {
         error: error instanceof Error ? error.message : 'Failed to load preparation data',
       }));
     }
-  }, []);
+  }, [syncPendingData]);
 
   // Get preparation for specific assignment
   const getPreparation = useCallback((assignmentId: string): AssignmentPreparation | undefined => {
@@ -259,63 +317,6 @@ export const useAssignmentPreparation = () => {
       .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
   }, [state.preparations, state.history]);
 
-  // Sync pending data when network becomes available
-  const syncPendingData = useCallback(async () => {
-    try {
-      const pendingData = await AsyncStorage.getItem(STORAGE_KEYS.PENDING_SYNC);
-      if (!pendingData) return;
-
-      const syncItems = JSON.parse(pendingData) as Array<{
-        type: 'preparation' | 'status' | 'note';
-        data: any;
-        timestamp: string;
-      }>;
-
-      // Process each pending item
-      for (const item of syncItems) {
-        try {
-          // In a real implementation, this would sync with API
-          await new Promise(resolve => setTimeout(resolve, 100));
-          console.log('Synced offline item:', item.type, item.timestamp);
-        } catch (error) {
-          console.error('Failed to sync item:', error);
-        }
-      }
-
-      // Clear pending sync data
-      await AsyncStorage.removeItem(STORAGE_KEYS.PENDING_SYNC);
-      await AsyncStorage.setItem(STORAGE_KEYS.LAST_SYNC, new Date().toISOString());
-
-      setState(prev => ({
-        ...prev,
-        syncPending: false,
-        lastSyncTime: new Date(),
-      }));
-
-    } catch (error) {
-      console.error('Failed to sync pending data:', error);
-    }
-  }, []);
-
-  // Add item to pending sync queue
-  const addToPendingSync = useCallback(async (type: string, data: any) => {
-    try {
-      const existingData = await AsyncStorage.getItem(STORAGE_KEYS.PENDING_SYNC);
-      const syncItems = existingData ? JSON.parse(existingData) : [];
-      
-      syncItems.push({
-        type,
-        data,
-        timestamp: new Date().toISOString(),
-      });
-      
-      await AsyncStorage.setItem(STORAGE_KEYS.PENDING_SYNC, JSON.stringify(syncItems));
-      
-      setState(prev => ({ ...prev, syncPending: true }));
-    } catch (error) {
-      console.error('Failed to add to pending sync:', error);
-    }
-  }, []);
 
 
   // Detect schedule conflicts
