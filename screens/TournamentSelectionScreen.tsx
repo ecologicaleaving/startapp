@@ -8,6 +8,8 @@ import {
   TouchableOpacity,
   Alert,
   RefreshControl,
+  ScrollView,
+  Dimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Tournament } from '../types/tournament';
@@ -34,10 +36,15 @@ const TournamentCard: React.FC<TournamentCardProps> = ({ tournament, onPress }) 
   };
 
   const getLocation = () => {
-    if (tournament.City && tournament.CountryName) {
-      return `${tournament.City}, ${tournament.CountryName}`;
+    // Try different combinations of available location data
+    const city = tournament.City;
+    const country = tournament.CountryName || tournament.Country;
+    
+    if (city && country) {
+      return `${city}, ${country}`;
     }
-    return tournament.Location || tournament.City || tournament.CountryName;
+    
+    return tournament.Location || city || country;
   };
 
   const getDateRange = () => {
@@ -68,15 +75,11 @@ const TournamentCard: React.FC<TournamentCardProps> = ({ tournament, onPress }) 
 
   return (
     <TouchableOpacity style={styles.tournamentCard} onPress={onPress} activeOpacity={0.8}>
-      <View style={styles.cardHeader}>
-        <View style={styles.tournamentInfo}>
-          <Text style={styles.tournamentNumber}>#{tournament.No}</Text>
+      {getStatusIndicator() && (
+        <View style={styles.cardHeader}>
           {getStatusIndicator()}
         </View>
-        {tournament.Code && (
-          <Text style={styles.tournamentCode}>{tournament.Code}</Text>
-        )}
-      </View>
+      )}
       
       <Text style={styles.tournamentName}>
         {tournament.Title || tournament.Name || `Tournament ${tournament.No}`}
@@ -93,12 +96,60 @@ const TournamentCard: React.FC<TournamentCardProps> = ({ tournament, onPress }) 
   );
 };
 
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const CAROUSEL_CARD_WIDTH = SCREEN_WIDTH * 0.75;
+const CAROUSEL_CARD_MARGIN = 12;
+
+interface LiveTournamentCardProps {
+  tournament: Tournament;
+  onPress: () => void;
+}
+
+const LiveTournamentCard: React.FC<LiveTournamentCardProps> = ({ tournament, onPress }) => {
+  const getLocation = () => {
+    // Try different combinations of available location data
+    const city = tournament.City;
+    const country = tournament.CountryName || tournament.Country;
+    
+    if (city && country) {
+      return `${city}, ${country}`;
+    }
+    
+    return tournament.Location || city || country;
+  };
+
+  return (
+    <TouchableOpacity 
+      style={styles.liveCard} 
+      onPress={onPress}
+      activeOpacity={0.8}
+    >
+      <View style={styles.liveCardHeader}>
+        <View style={styles.liveBadge}>
+          <View style={styles.liveIndicatorPulse} />
+          <Text style={styles.liveBadgeText}>🔴 IN CORSO</Text>
+        </View>
+      </View>
+      
+      <Text style={styles.liveTournamentName} numberOfLines={2}>
+        {tournament.Title || tournament.Name || `Tournament ${tournament.No}`}
+      </Text>
+      
+      {getLocation() && (
+        <Text style={styles.liveTournamentLocation} numberOfLines={1}>
+          📍 {getLocation()}
+        </Text>
+      )}
+    </TouchableOpacity>
+  );
+};
+
 const TournamentSelectionScreen: React.FC = () => {
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedType, setSelectedType] = useState<TournamentType>('ALL');
+  const [selectedType, setSelectedType] = useState<TournamentType>('BPT');
   const router = useRouter();
 
   const loadTournaments = useCallback(async (forceRefresh = false) => {
@@ -145,6 +196,17 @@ const TournamentSelectionScreen: React.FC = () => {
     });
   };
 
+  // Filter live tournaments
+  const liveTournaments = tournaments.filter(tournament => {
+    if (!tournament.StartDate || !tournament.EndDate) return false;
+    
+    const now = new Date();
+    const start = new Date(tournament.StartDate);
+    const end = new Date(tournament.EndDate);
+    
+    return start <= now && now <= end;
+  });
+
   const renderTournament = ({ item }: { item: Tournament }) => (
     <TournamentCard 
       tournament={item} 
@@ -153,7 +215,7 @@ const TournamentSelectionScreen: React.FC = () => {
   );
 
   const renderFilterTabs = () => {
-    const filterTypes: TournamentType[] = ['ALL', 'FIVB', 'CEV', 'BPT'];
+    const filterTypes: TournamentType[] = ['ALL', 'BPT'];
     
     return (
       <View style={styles.filterContainer}>
@@ -174,6 +236,43 @@ const TournamentSelectionScreen: React.FC = () => {
             </Text>
           </TouchableOpacity>
         ))}
+      </View>
+    );
+  };
+
+  const renderLiveTournamentsCarousel = () => {
+    return (
+      <View style={styles.carouselSection}>
+        <View style={styles.carouselHeader}>
+          <Text style={styles.carouselTitle}>🔴 Playing Now</Text>
+        </View>
+        
+        {liveTournaments.length > 0 ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            decelerationRate="fast"
+            snapToInterval={CAROUSEL_CARD_WIDTH + CAROUSEL_CARD_MARGIN * 2}
+            contentContainerStyle={styles.carouselContainer}
+          >
+            {liveTournaments.map((tournament, index) => (
+              <View key={tournament.No} style={styles.carouselCardWrapper}>
+                <LiveTournamentCard
+                  tournament={tournament}
+                  onPress={() => handleTournamentPress(tournament)}
+                />
+              </View>
+            ))}
+          </ScrollView>
+        ) : (
+          <View style={styles.emptyCarouselContainer}>
+            <View style={styles.emptyCarouselCard}>
+              <Text style={styles.emptyCarouselIcon}>⏰</Text>
+              <Text style={styles.emptyCarouselText}>No tournaments at the moment</Text>
+              <Text style={styles.emptyCarouselSubtext}>Live tournaments will appear here</Text>
+            </View>
+          </View>
+        )}
       </View>
     );
   };
@@ -203,10 +302,9 @@ const TournamentSelectionScreen: React.FC = () => {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Choose a Tournament</Text>
-        <Text style={styles.subtitle}>
-          Select the tournament you're officiating
-        </Text>
       </View>
+      
+      {renderLiveTournamentsCarousel()}
       
       {renderFilterTabs()}
       
@@ -338,35 +436,25 @@ const styles = StyleSheet.create({
   },
   tournamentCard: {
     backgroundColor: '#FFFFFF',
-    padding: 24,
-    marginBottom: 16,
-    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderRadius: 12,
     shadowColor: '#1B365D',
     shadowOffset: {
       width: 0,
-      height: 4,
+      height: 2,
     },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 4,
     borderWidth: 1,
     borderColor: '#E5E7EB',
   },
   cardHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
     alignItems: 'center',
-    marginBottom: 12,
-  },
-  tournamentInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  tournamentNumber: {
-    fontSize: 16,
-    color: '#4A90A4',
-    fontWeight: 'bold',
-    marginRight: 12,
+    marginBottom: 8,
   },
   liveIndicator: {
     backgroundColor: '#2E8B57',
@@ -379,25 +467,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
   },
-  tournamentCode: {
-    fontSize: 14,
-    color: '#6B7280',
-    fontFamily: 'monospace',
-  },
   tournamentName: {
-    fontSize: 24,
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#1B365D',
-    marginBottom: 8,
-    lineHeight: 32,
+    marginBottom: 6,
+    lineHeight: 24,
   },
   tournamentLocation: {
-    fontSize: 18,
+    fontSize: 14,
     color: '#4A90A4',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   tournamentDate: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#6B7280',
   },
   emptyState: {
@@ -415,6 +498,119 @@ const styles = StyleSheet.create({
   emptySubtext: {
     fontSize: 16,
     color: '#4A90A4',
+    textAlign: 'center',
+  },
+  // Live Tournaments Carousel Styles
+  carouselSection: {
+    marginBottom: 24,
+  },
+  carouselHeader: {
+    paddingHorizontal: 24,
+    marginBottom: 16,
+  },
+  carouselTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1B365D',
+    marginBottom: 4,
+  },
+  carouselSubtitle: {
+    fontSize: 14,
+    color: '#4A90A4',
+    fontWeight: '500',
+  },
+  carouselContainer: {
+    paddingLeft: 24,
+    paddingRight: 12,
+  },
+  carouselCardWrapper: {
+    marginRight: CAROUSEL_CARD_MARGIN,
+    width: CAROUSEL_CARD_WIDTH,
+  },
+  liveCard: {
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+    borderRadius: 12,
+    shadowColor: '#2E8B57',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 8,
+    borderWidth: 2,
+    borderColor: '#2E8B57',
+    minHeight: 110,
+  },
+  liveCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  liveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2E8B57',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  liveIndicatorPulse: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#FF4444',
+    marginRight: 6,
+    // Animation would be handled by Animated API in a real implementation
+  },
+  liveBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  liveTournamentName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1B365D',
+    marginBottom: 6,
+    lineHeight: 20,
+  },
+  liveTournamentLocation: {
+    fontSize: 13,
+    color: '#4A90A4',
+    marginBottom: 4,
+  },
+  // Empty Carousel State Styles
+  emptyCarouselContainer: {
+    paddingHorizontal: 24,
+  },
+  emptyCarouselCard: {
+    backgroundColor: '#F8F9FA',
+    padding: 20,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 110,
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+    borderStyle: 'dashed',
+  },
+  emptyCarouselIcon: {
+    fontSize: 32,
+    marginBottom: 12,
+  },
+  emptyCarouselText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  emptyCarouselSubtext: {
+    fontSize: 14,
+    color: '#9CA3AF',
     textAlign: 'center',
   },
 });

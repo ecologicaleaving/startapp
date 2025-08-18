@@ -91,7 +91,8 @@
       "Bash(wmic process where processid=8408 delete:*)",
       "Bash(wmic process where:*)",
       "Bash(git rm:*)",
-      "Bash(del NUL)"
+      "Bash(del NUL)",
+      "mcp__ide__getDiagnostics"
     ],
     "deny": []
   }

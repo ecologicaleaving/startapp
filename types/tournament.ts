@@ -3,6 +3,7 @@ export interface Tournament {
   Name?: string;
   Title?: string;
   City?: string;
+  Country?: string;
   CountryName?: string;
   Location?: string;
   StartDate?: string;

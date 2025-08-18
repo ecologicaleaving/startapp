@@ -464,8 +464,13 @@ export class VisApiService implements IVisApiService {
           No: extractAttribute('No') || '',
           Code: extractAttribute('Code'),
           Name: extractAttribute('Name'),
+          Title: extractAttribute('Title'),
           StartDate: extractAttribute('StartDate'),
           EndDate: extractAttribute('EndDate'),
+          City: extractAttribute('City'),
+          Country: extractAttribute('Country'),
+          CountryName: extractAttribute('CountryName'),
+          Location: extractAttribute('Location'),
           Version: extractAttribute('Version'),
         };
       });

@@ -1,63 +1,33 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet } from 'react-native';
 import { TournamentStorageService } from '../services/TournamentStorageService';
-import { BrandLoadingState, BrandSplashScreen } from '../components/Brand';
-import { colors } from '../theme/tokens';
 import TournamentSelection from './tournament-selection';
 import RefereeDashboard from './referee-dashboard';
 
 export default function Index() {
-  const [navigationState, setNavigationState] = useState<'selection' | 'dashboard' | 'loading'>('loading');
+  const [navigationState, setNavigationState] = useState<'selection' | 'dashboard'>('selection');
 
   useEffect(() => {
-    const determineNavigationFlow = async () => {
+    // Check in background if user has a previously selected tournament
+    const checkForStoredTournament = async () => {
       try {
-        console.log('Index: Determining navigation flow...');
         const navState = await TournamentStorageService.getNavigationState();
-        console.log('Index: Navigation state determined:', navState);
-        setNavigationState(navState);
+        // Only switch to dashboard if user has a stored tournament
+        if (navState === 'dashboard') {
+          setNavigationState('dashboard');
+        }
+        // Otherwise, stay on tournament selection (first-time user experience)
       } catch (error) {
-        console.error('Index: Error determining navigation:', error);
-        // Default to tournament selection for new users
-        setNavigationState('selection');
+        console.error('Index: Error checking stored tournament:', error);
+        // Stay on selection screen for first-time users
       }
     };
 
-    determineNavigationFlow();
+    checkForStoredTournament();
   }, []);
 
-  const handleTournamentSelected = () => {
-    console.log('Index: Tournament selected, navigating to dashboard');
-    setNavigationState('dashboard');
-  };
-
-  const handleSwitchTournament = () => {
-    console.log('Index: Switching tournament, navigating to selection');
-    setNavigationState('selection');
-  };
-
-  if (navigationState === 'loading') {
-    return (
-      <BrandLoadingState 
-        variant="logo"
-        message="Initializing Referee Tool..."
-        size="large"
-      />
-    );
-  }
-
   if (navigationState === 'selection') {
-    return <TournamentSelection onTournamentSelected={handleTournamentSelected} />;
+    return <TournamentSelection onTournamentSelected={() => setNavigationState('dashboard')} />;
   }
 
-  return <RefereeDashboard onSwitchTournament={handleSwitchTournament} />;
+  return <RefereeDashboard onSwitchTournament={() => setNavigationState('selection')} />;
 }
-
-const styles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: colors.background,
-  },
-});
