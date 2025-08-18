@@ -95,7 +95,8 @@
       "mcp__ide__getDiagnostics",
       "WebSearch",
       "WebFetch(domain:sslsites.de)",
-      "Bash(rg:*)"
+      "Bash(rg:*)",
+      "Bash(touch:*)"
     ],
     "deny": []
   }

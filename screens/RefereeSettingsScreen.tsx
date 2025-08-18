@@ -1827,13 +1827,23 @@ const RefereeSettingsScreenContent: React.FC = () => {
         <NavigationHeader
           title="Settings"
           showBackButton={true}
-          showStatusBar={true}
+          showStatusBar={false}
           onStatusPress={handleStatusPress}
         />
         <View style={styles.centerContainer}>
           <Text>Loading settings...</Text>
         </View>
-        <BottomTabNavigation currentTab="monitor" />
+        <BottomTabNavigation 
+          currentTab="monitor" 
+          onTabPress={(tab) => {
+            if (tab === 'details' && currentTournament) {
+              router.push({
+                pathname: '/tournament-detail',
+                params: { tournamentData: JSON.stringify(currentTournament) }
+              });
+            }
+          }}
+        />
       </View>
     );
   }
@@ -1966,7 +1976,7 @@ const RefereeSettingsScreenContent: React.FC = () => {
         <NavigationHeader
         title={currentTournament?.Name || "Settings"}
         showBackButton={true}
-        showStatusBar={true}
+        showStatusBar={false}
         onStatusPress={handleStatusPress}
         rightComponent={
           <View style={styles.headerActions}>
@@ -2003,7 +2013,17 @@ const RefereeSettingsScreenContent: React.FC = () => {
          showRefereeMatches ? renderRefereeMatchesSection() : 
          renderMonitorOptions()}
       </View>
-      {!showRefereeList && <BottomTabNavigation currentTab="monitor" />}
+      {!showRefereeList && <BottomTabNavigation 
+        currentTab="monitor" 
+        onTabPress={(tab) => {
+          if (tab === 'details' && currentTournament) {
+            router.push({
+              pathname: '/tournament-detail',
+              params: { tournamentData: JSON.stringify(currentTournament) }
+            });
+          }
+        }}
+      />}
     </View>
   );
 };
