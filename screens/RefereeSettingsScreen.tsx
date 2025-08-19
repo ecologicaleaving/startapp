@@ -12,10 +12,11 @@ import {
   FlatList,
   ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { TournamentStorageService, UserPreferences } from '../services/TournamentStorageService';
 import { VisApiService } from '../services/visApi';
 import { BeachMatch } from '../types/match';
+import { Tournament } from '../types/tournament';
 import { AssignmentStatusProvider, useAssignmentStatus } from '../hooks/useAssignmentStatus';
 import { StatusIndicator } from '../components/Status/StatusIndicator';
 import NavigationHeader from '../components/navigation/NavigationHeader';
@@ -40,6 +41,16 @@ interface RefereeProfile {
 
 const RefereeSettingsScreenContent: React.FC = () => {
   const router = useRouter();
+  const { tournamentData } = useLocalSearchParams<{ tournamentData: string }>();
+
+  // Parse tournament data from route params
+  const tournament: Tournament = React.useMemo(() => {
+    try {
+      return JSON.parse(tournamentData || '{}') as Tournament;
+    } catch {
+      return {} as Tournament;
+    }
+  }, [tournamentData]);
   const [profile, setProfile] = useState<RefereeProfile>({
     refereeNo: '',
     name: '',
@@ -93,6 +104,31 @@ const RefereeSettingsScreenContent: React.FC = () => {
     loadSettings();
   }, []);
 
+  // Update current tournament when route params change
+  useEffect(() => {
+    if (tournament.No) {
+      console.log('RefereeSettingsScreen: Tournament updated:', tournament.No, tournament.Name);
+      setCurrentTournament(tournament);
+      setSelectedTournament(tournament.No);
+      
+      // Reset monitor data when tournament changes
+      setSelectedCourt('All Courts');
+      setCourtMatches([]);
+      setSelectedReferee(null);
+      setRefereeMatches([]);
+      setShowCourtSelection(false);
+      setShowRefereeMatches(false);
+      setAvailableCourts([]);
+      setRefereeList([]);
+      
+      // Force reload of court matches if court selection is active
+      if (showCourtSelection) {
+        console.log('🏐 DEBUG: Tournament changed, reloading court matches...');
+        setTimeout(() => loadCourtMatches(), 100);
+      }
+    }
+  }, [tournament]);
+
   useEffect(() => {
     if (selectedTournament) {
       loadAvailableCourts();
@@ -111,11 +147,13 @@ const RefereeSettingsScreenContent: React.FC = () => {
       const userPrefs = await TournamentStorageService.getUserPreferences();
       setPreferences(userPrefs);
       
-      // Load selected tournament
-      const tournament = await TournamentStorageService.getSelectedTournament();
-      if (tournament) {
-        setSelectedTournament(tournament.No);
-        setCurrentTournament(tournament);
+      // Load selected tournament (prioritize route params over storage)
+      if (!tournament.No) {
+        const storedTournament = await TournamentStorageService.getSelectedTournament();
+        if (storedTournament) {
+          setSelectedTournament(storedTournament.No);
+          setCurrentTournament(storedTournament);
+        }
       }
       
       // Load saved referee profile
@@ -146,7 +184,7 @@ const RefereeSettingsScreenContent: React.FC = () => {
       allMatches = [...currentMatches];
       
       // Find related tournaments (men's/women's versions) and load their matches too
-      const tournament = await TournamentStorageService.getSelectedTournament();
+      const tournament = currentTournament || await TournamentStorageService.getSelectedTournament();
       if (tournament?.Code) {
         try {
           const relatedTournaments = await VisApiService.findRelatedTournaments(tournament);
@@ -338,13 +376,14 @@ const RefereeSettingsScreenContent: React.FC = () => {
     try {
       setLoadingRefereeMatches(true);
       console.log(`🏐 DEBUG: Loading matches for referee ${referee.Name} in tournament ${selectedTournament}...`);
+      console.log('🏐 DEBUG: loadRefereeMatches - currentTournament:', currentTournament?.No, currentTournament?.Name);
 
       // Get all matches for the tournament (including both male and female if applicable)
       let allMatches = await VisApiService.getBeachMatchList(selectedTournament);
       console.log(`🏐 DEBUG: Found ${allMatches.length} matches for tournament ${selectedTournament}`);
       
       // Get current tournament data to determine gender
-      const currentTournamentData = await TournamentStorageService.getSelectedTournament();
+      const currentTournamentData = currentTournament || await TournamentStorageService.getSelectedTournament();
       const currentGender = currentTournamentData?.Code ? VisApiService.extractGenderFromCode(currentTournamentData.Code) : 'Mixed';
       
       // Add source metadata to original matches
@@ -846,6 +885,9 @@ const RefereeSettingsScreenContent: React.FC = () => {
   const loadCourtMatches = async () => {
     if (!selectedTournament) return;
     
+    console.log('🏐 DEBUG: loadCourtMatches - selectedTournament:', selectedTournament);
+    console.log('🏐 DEBUG: loadCourtMatches - currentTournament:', currentTournament?.No, currentTournament?.Name);
+    
     setLoadingCourtMatches(true);
     try {
       
@@ -853,7 +895,7 @@ const RefereeSettingsScreenContent: React.FC = () => {
       
       // Load matches from current tournament
       const currentMatches = await VisApiService.getBeachMatchList(selectedTournament);
-      const currentTournamentData = await TournamentStorageService.getSelectedTournament();
+      const currentTournamentData = currentTournament || await TournamentStorageService.getSelectedTournament();
       const currentGender = currentTournamentData?.Code ? VisApiService.extractGenderFromCode(currentTournamentData.Code) : 'Unknown';
       
       // Add metadata to current tournament matches

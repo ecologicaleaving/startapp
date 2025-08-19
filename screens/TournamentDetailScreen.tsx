@@ -26,6 +26,8 @@ const TournamentDetailScreenContent: React.FC = () => {
   const [showMoreLoading, setShowMoreLoading] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [availableDates, setAvailableDates] = useState<string[]>([]);
+  const [detailedTournament, setDetailedTournament] = useState<Tournament | null>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
   const router = useRouter();
   const { tournamentData } = useLocalSearchParams<{ tournamentData: string }>();
 
@@ -130,6 +132,37 @@ const TournamentDetailScreenContent: React.FC = () => {
 
   const handleGoBack = () => {
     router.back();
+  };
+
+  // Load detailed tournament information
+  const loadTournamentDetails = async () => {
+    if (!tournament.No) return;
+    
+    setDetailsLoading(true);
+    try {
+      console.log(`Loading detailed tournament info for ${tournament.No}...`);
+      
+      // Try to get additional tournament details from the API
+      const details = await VisApiService.getBeachTournamentDetails(tournament.No);
+      
+      if (details) {
+        console.log('Detailed tournament data:', details);
+        // Merge the detailed data with the basic tournament data
+        setDetailedTournament({
+          ...tournament,
+          ...details
+        });
+      } else {
+        // If no additional details found, use the basic tournament data
+        setDetailedTournament(tournament);
+      }
+    } catch (error) {
+      console.error('Failed to load tournament details:', error);
+      // Fallback to basic tournament data
+      setDetailedTournament(tournament);
+    } finally {
+      setDetailsLoading(false);
+    }
   };
 
   // Load matches for active or completed tournaments
@@ -496,6 +529,7 @@ const TournamentDetailScreenContent: React.FC = () => {
 
   useEffect(() => {
     loadMatches();
+    loadTournamentDetails();
   }, [tournament.No]);
 
   // Handle status bar press - navigate to assignments if available
@@ -542,6 +576,9 @@ const TournamentDetailScreenContent: React.FC = () => {
             <View style={[styles.statusBadge, { backgroundColor: getStatusColor() }]}>
               <Text style={styles.statusText}>{getTournamentStatus().toUpperCase()}</Text>
             </View>
+            {detailsLoading && (
+              <ActivityIndicator size="small" color="#FF6B35" style={styles.loadingIndicator} />
+            )}
           </View>
 
           <Text style={styles.tournamentName}>
@@ -549,6 +586,7 @@ const TournamentDetailScreenContent: React.FC = () => {
           </Text>
 
           <View style={styles.detailsContainer}>
+            {/* Date */}
             <View style={styles.detailItem}>
               <Text style={styles.detailIcon}>📅</Text>
               <View style={styles.detailTextContainer}>
@@ -556,6 +594,125 @@ const TournamentDetailScreenContent: React.FC = () => {
                 <Text style={styles.detailValue}>{getDateRange()}</Text>
               </View>
             </View>
+
+            {/* Location */}
+            <View style={styles.detailItem}>
+              <Text style={styles.detailIcon}>📍</Text>
+              <View style={styles.detailTextContainer}>
+                <Text style={styles.detailLabel}>Location</Text>
+                <Text style={styles.detailValue}>{getLocation()}</Text>
+              </View>
+            </View>
+
+            {/* Tournament Type/Category */}
+            {(detailedTournament?.Type || detailedTournament?.Category || detailedTournament?.Series) && (
+              <View style={styles.detailItem}>
+                <Text style={styles.detailIcon}>🏆</Text>
+                <View style={styles.detailTextContainer}>
+                  <Text style={styles.detailLabel}>Category</Text>
+                  <Text style={styles.detailValue}>
+                    {detailedTournament?.Type || detailedTournament?.Category || detailedTournament?.Series}
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* Tournament Code */}
+            {tournament.Code && (
+              <View style={styles.detailItem}>
+                <Text style={styles.detailIcon}>🔢</Text>
+                <View style={styles.detailTextContainer}>
+                  <Text style={styles.detailLabel}>Code</Text>
+                  <Text style={styles.detailValue}>{tournament.Code}</Text>
+                </View>
+              </View>
+            )}
+
+            {/* Prize Money */}
+            {(detailedTournament?.PrizeMoney || detailedTournament?.Prize) && (
+              <View style={styles.detailItem}>
+                <Text style={styles.detailIcon}>💰</Text>
+                <View style={styles.detailTextContainer}>
+                  <Text style={styles.detailLabel}>Prize Money</Text>
+                  <Text style={styles.detailValue}>
+                    {detailedTournament?.PrizeMoney || detailedTournament?.Prize}
+                    {detailedTournament?.Currency && ` ${detailedTournament.Currency}`}
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* Venue Details */}
+            {detailedTournament?.Venue && (
+              <View style={styles.detailItem}>
+                <Text style={styles.detailIcon}>🏟️</Text>
+                <View style={styles.detailTextContainer}>
+                  <Text style={styles.detailLabel}>Venue</Text>
+                  <Text style={styles.detailValue}>{detailedTournament.Venue}</Text>
+                </View>
+              </View>
+            )}
+
+            {/* Number of Courts */}
+            {detailedTournament?.Courts && (
+              <View style={styles.detailItem}>
+                <Text style={styles.detailIcon}>🏐</Text>
+                <View style={styles.detailTextContainer}>
+                  <Text style={styles.detailLabel}>Courts</Text>
+                  <Text style={styles.detailValue}>{detailedTournament.Courts}</Text>
+                </View>
+              </View>
+            )}
+
+            {/* Surface Type */}
+            {detailedTournament?.Surface && (
+              <View style={styles.detailItem}>
+                <Text style={styles.detailIcon}>🏖️</Text>
+                <View style={styles.detailTextContainer}>
+                  <Text style={styles.detailLabel}>Surface</Text>
+                  <Text style={styles.detailValue}>{detailedTournament.Surface}</Text>
+                </View>
+              </View>
+            )}
+
+            {/* Entry Deadline */}
+            {detailedTournament?.EntryDeadline && (
+              <View style={styles.detailItem}>
+                <Text style={styles.detailIcon}>⏰</Text>
+                <View style={styles.detailTextContainer}>
+                  <Text style={styles.detailLabel}>Entry Deadline</Text>
+                  <Text style={styles.detailValue}>{formatDate(detailedTournament.EntryDeadline)}</Text>
+                </View>
+              </View>
+            )}
+
+            {/* Contact Information */}
+            {detailedTournament?.ContactName && (
+              <View style={styles.detailItem}>
+                <Text style={styles.detailIcon}>👤</Text>
+                <View style={styles.detailTextContainer}>
+                  <Text style={styles.detailLabel}>Contact</Text>
+                  <Text style={styles.detailValue}>{detailedTournament.ContactName}</Text>
+                  {detailedTournament.ContactEmail && (
+                    <Text style={styles.detailSubValue}>{detailedTournament.ContactEmail}</Text>
+                  )}
+                  {detailedTournament.ContactPhone && (
+                    <Text style={styles.detailSubValue}>{detailedTournament.ContactPhone}</Text>
+                  )}
+                </View>
+              </View>
+            )}
+
+            {/* Website */}
+            {detailedTournament?.Website && (
+              <View style={styles.detailItem}>
+                <Text style={styles.detailIcon}>🌐</Text>
+                <View style={styles.detailTextContainer}>
+                  <Text style={styles.detailLabel}>Website</Text>
+                  <Text style={styles.detailValue}>{detailedTournament.Website}</Text>
+                </View>
+              </View>
+            )}
           </View>
         </View>
 
@@ -751,6 +908,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#1B365D',
     fontWeight: '600',
+  },
+  detailSubValue: {
+    fontSize: 14,
+    color: '#6B7280',
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  loadingIndicator: {
+    marginLeft: 8,
   },
   
   // Status Integration Styles

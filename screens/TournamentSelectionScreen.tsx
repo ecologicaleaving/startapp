@@ -10,6 +10,7 @@ import {
   RefreshControl,
   ScrollView,
   Dimensions,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Clock } from 'lucide-react';
@@ -252,7 +253,11 @@ const TournamentSelectionScreen: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<string>('ALL');
   const [availableCategories, setAvailableCategories] = useState<string[]>(['ALL']);
+  const [showDropdown, setShowDropdown] = useState(false);
   const [currentWeekStart, setCurrentWeekStart] = useState<Date>(getWeekStart(new Date()));
+  const [timePeriod, setTimePeriod] = useState<'Week' | 'Month' | 'Year'>('Week');
+  const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
+  const [currentYear, setCurrentYear] = useState<Date>(new Date());
   const router = useRouter();
 
   // Helper function to get Monday of current week
@@ -280,6 +285,16 @@ const TournamentSelectionScreen: React.FC = () => {
     }
   }
 
+  // Helper function to format month
+  function formatMonth(date: Date): string {
+    return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  }
+
+  // Helper function to format year
+  function formatYear(date: Date): string {
+    return date.getFullYear().toString();
+  }
+
   const loadTournaments = useCallback(async (forceRefresh = false) => {
     try {
       setLoading(true);
@@ -288,10 +303,13 @@ const TournamentSelectionScreen: React.FC = () => {
       console.log(`Loading tournaments, force refresh: ${forceRefresh}`);
       
       // Force fresh data by bypassing cache system - load ALL tournaments
+      const currentYearNumber = currentYear.getFullYear();
+      console.log(`Loading tournaments for year: ${currentYearNumber}`);
+      
       const tournamentList = await VisApiService.fetchDirectFromAPI({ 
         recentOnly: false,  // Get all tournaments, not just recent
         tournamentType: undefined,  // Get all types, filter client-side
-        year: 2025  // Only this year's tournaments
+        year: currentYearNumber  // Use selected year from time period selector
       });
       
       console.log(`Loaded ${tournamentList.length} total tournaments`);
@@ -307,7 +325,7 @@ const TournamentSelectionScreen: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, []);  // Remove selectedType dependency
+  }, [currentYear]);  // Add currentYear dependency so tournaments reload when year changes
 
   useEffect(() => {
     loadTournaments();
@@ -318,6 +336,22 @@ const TournamentSelectionScreen: React.FC = () => {
     // This will automatically trigger re-filtering when selectedType changes
     // No need to reload tournaments from API
   }, [selectedType]);
+
+  // Sync time periods when switching modes
+  useEffect(() => {
+    const now = new Date();
+    switch (timePeriod) {
+      case 'Week':
+        setCurrentWeekStart(getWeekStart(now));
+        break;
+      case 'Month':
+        setCurrentMonth(now);
+        break;
+      case 'Year':
+        setCurrentYear(now);
+        break;
+    }
+  }, [timePeriod]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -335,7 +369,45 @@ const TournamentSelectionScreen: React.FC = () => {
     });
   };
 
-  // Filter tournaments for current week and selected type
+  // Match tournament to category with flexible patterns
+  const matchesTournamentCategory = (tournament: Tournament, category: string): boolean => {
+    if (category === 'ALL') return true;
+    
+    const name = (tournament.Name || tournament.Title || '').toUpperCase();
+    const type = (tournament.Type || tournament.Category || tournament.Series || '').toUpperCase();
+    const allText = `${name} ${type}`.trim();
+    
+    // Direct field matching
+    if (type.includes(category)) return true;
+    
+    // Pattern-based matching for common categories
+    switch (category) {
+      case 'BPT':
+        return (allText.includes('BPT') || allText.includes('BEACH PRO TOUR') || allText.includes('BEACH PROFESSIONAL')) &&
+               !allText.includes('FUTURES') && !allText.includes('ELITE') && !allText.includes('CHALLENGE');
+      case 'BPT FUTURES':
+        return allText.includes('BPT FUTURES') || allText.includes('FUTURES');
+      case 'BPT ELITE':
+        return allText.includes('BPT ELITE') || allText.includes('ELITE');
+      case 'BPT CHALLENGE':
+        return allText.includes('BPT CHALLENGE') || allText.includes('CHALLENGE');
+      case 'CEV':
+        return allText.includes('CEV') || allText.includes('EUROPEAN') || allText.includes('CONFEDERATION');
+      case 'FIVB':
+        return allText.includes('FIVB') || allText.includes('WORLD') || allText.includes('INTERNATIONAL');
+      case 'NATIONAL':
+        return allText.includes('NATIONAL') || allText.includes('DOMESTIC') || allText.includes('CHAMPIONSHIP');
+      case 'YOUTH':
+        return allText.includes('YOUTH') || allText.includes('U21') || allText.includes('U19') || allText.includes('JUNIOR');
+      case 'QUALIFICATION':
+        return allText.includes('QUALIFICATION') || allText.includes('QUALIFIER') || allText.includes('QUALIFYING');
+      default:
+        // For any other category, check if it appears in the tournament text
+        return allText.includes(category);
+    }
+  };
+
+  // Filter tournaments based on selected time period and category
   const filteredTournaments = tournaments.filter(tournament => {
     if (!tournament.StartDate) return false;
     
@@ -344,35 +416,81 @@ const TournamentSelectionScreen: React.FC = () => {
       return false;
     }
     
-    // Week filtering
     const tournamentStart = new Date(tournament.StartDate);
     const tournamentEnd = tournament.EndDate ? new Date(tournament.EndDate) : tournamentStart;
-    const weekStart = new Date(currentWeekStart);
-    const weekEnd = new Date(currentWeekStart);
-    weekEnd.setDate(weekStart.getDate() + 6);
     
-    const weekOverlap = tournamentStart <= weekEnd && tournamentEnd >= weekStart;
+    let periodOverlap = false;
+    
+    switch (timePeriod) {
+      case 'Week':
+        const weekStart = new Date(currentWeekStart);
+        const weekEnd = new Date(currentWeekStart);
+        weekEnd.setDate(weekStart.getDate() + 6);
+        periodOverlap = tournamentStart <= weekEnd && tournamentEnd >= weekStart;
+        break;
+        
+      case 'Month':
+        const monthStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+        const monthEnd = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
+        periodOverlap = tournamentStart <= monthEnd && tournamentEnd >= monthStart;
+        break;
+        
+      case 'Year':
+        const yearStart = new Date(currentYear.getFullYear(), 0, 1);
+        const yearEnd = new Date(currentYear.getFullYear(), 11, 31);
+        periodOverlap = tournamentStart <= yearEnd && tournamentEnd >= yearStart;
+        break;
+    }
     
     // Type filtering
     if (selectedType === 'ALL') {
-      return weekOverlap;
+      return periodOverlap;
     }
     
     // Dynamic tournament type filtering
-    return weekOverlap && matchesTournamentCategory(tournament, selectedType);
+    return periodOverlap && matchesTournamentCategory(tournament, selectedType);
   });
 
-  // Navigate to previous/next week
-  const navigateWeek = (direction: 'prev' | 'next') => {
-    const newWeekStart = new Date(currentWeekStart);
-    const daysToMove = direction === 'next' ? 7 : -7;
-    newWeekStart.setDate(currentWeekStart.getDate() + daysToMove);
-    setCurrentWeekStart(newWeekStart);
+  // Navigate based on time period
+  const navigatePeriod = (direction: 'prev' | 'next') => {
+    switch (timePeriod) {
+      case 'Week':
+        const newWeekStart = new Date(currentWeekStart);
+        const daysToMove = direction === 'next' ? 7 : -7;
+        newWeekStart.setDate(currentWeekStart.getDate() + daysToMove);
+        setCurrentWeekStart(newWeekStart);
+        break;
+        
+      case 'Month':
+        const newMonth = new Date(currentMonth);
+        const monthsToMove = direction === 'next' ? 1 : -1;
+        newMonth.setMonth(currentMonth.getMonth() + monthsToMove);
+        setCurrentMonth(newMonth);
+        break;
+        
+      case 'Year':
+        const newYear = new Date(currentYear);
+        const yearsToMove = direction === 'next' ? 1 : -1;
+        newYear.setFullYear(currentYear.getFullYear() + yearsToMove);
+        setCurrentYear(newYear);
+        break;
+    }
   };
 
-  // Navigate to current week (today)
-  const goToCurrentWeek = () => {
-    setCurrentWeekStart(getWeekStart(new Date()));
+  // Navigate to current period (today)
+  const goToCurrentPeriod = () => {
+    const now = new Date();
+    switch (timePeriod) {
+      case 'Week':
+        setCurrentWeekStart(getWeekStart(now));
+        break;
+      case 'Month':
+        setCurrentMonth(now);
+        break;
+      case 'Year':
+        setCurrentYear(now);
+        break;
+    }
   };
 
   // Extract tournament categories from tournament data
@@ -401,9 +519,18 @@ const TournamentSelectionScreen: React.FC = () => {
       
       // Extract from tournament name patterns
       const name = (tournament.Name || tournament.Title || '').toUpperCase();
-      if (name.includes('BPT') || name.includes('BEACH PRO TOUR')) {
+      
+      // BPT subcategories (check specific ones first, then general BPT)
+      if (name.includes('BPT FUTURES') || name.includes('FUTURES')) {
+        categorySet.add('BPT FUTURES');
+      } else if (name.includes('BPT ELITE') || name.includes('ELITE')) {
+        categorySet.add('BPT ELITE');
+      } else if (name.includes('BPT CHALLENGE') || name.includes('CHALLENGE')) {
+        categorySet.add('BPT CHALLENGE');
+      } else if (name.includes('BPT') || name.includes('BEACH PRO TOUR')) {
         categorySet.add('BPT');
       }
+      
       if (name.includes('CEV') || name.includes('EUROPEAN')) {
         categorySet.add('CEV');
       }
@@ -422,8 +549,12 @@ const TournamentSelectionScreen: React.FC = () => {
     });
     
     const categories = Array.from(categorySet).sort((a, b) => {
-      // Prioritize common categories
-      const priority = ['ALL', 'BPT', 'CEV', 'FIVB', 'NATIONAL', 'YOUTH', 'QUALIFICATION'];
+      // Prioritize common categories with BPT subcategories
+      const priority = [
+        'ALL', 
+        'BPT', 'BPT ELITE', 'BPT CHALLENGE', 'BPT FUTURES',
+        'CEV', 'FIVB', 'NATIONAL', 'YOUTH', 'QUALIFICATION'
+      ];
       const aIndex = priority.indexOf(a);
       const bIndex = priority.indexOf(b);
       
@@ -444,99 +575,151 @@ const TournamentSelectionScreen: React.FC = () => {
     />
   );
 
-  // Match tournament to category with flexible patterns
-  const matchesTournamentCategory = (tournament: Tournament, category: string): boolean => {
-    if (category === 'ALL') return true;
-    
-    const name = (tournament.Name || tournament.Title || '').toUpperCase();
-    const type = (tournament.Type || tournament.Category || tournament.Series || '').toUpperCase();
-    const allText = `${name} ${type}`.trim();
-    
-    // Direct field matching
-    if (type.includes(category)) return true;
-    
-    // Pattern-based matching for common categories
-    switch (category) {
-      case 'BPT':
-        return allText.includes('BPT') || allText.includes('BEACH PRO TOUR') || allText.includes('BEACH PROFESSIONAL');
-      case 'CEV':
-        return allText.includes('CEV') || allText.includes('EUROPEAN') || allText.includes('CONFEDERATION');
-      case 'FIVB':
-        return allText.includes('FIVB') || allText.includes('WORLD') || allText.includes('INTERNATIONAL');
-      case 'NATIONAL':
-        return allText.includes('NATIONAL') || allText.includes('DOMESTIC') || allText.includes('CHAMPIONSHIP');
-      case 'YOUTH':
-        return allText.includes('YOUTH') || allText.includes('U21') || allText.includes('U19') || allText.includes('JUNIOR');
-      case 'QUALIFICATION':
-        return allText.includes('QUALIFICATION') || allText.includes('QUALIFIER') || allText.includes('QUALIFYING');
-      default:
-        // For any other category, check if it appears in the tournament text
-        return allText.includes(category);
-    }
-  };
-
-  const renderFilterTabs = () => {
-    return (
-      <ScrollView 
-        horizontal 
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.filterScrollContainer}
-        style={styles.filterContainer}
-      >
-        {availableCategories.map((category) => {
-          // Get count of tournaments for this category
-          const categoryCount = tournaments.filter(tournament => {
-            if (!tournament.StartDate) return false;
-            if (tournament.Status && tournament.Status.toLowerCase().includes('cancelled')) return false;
-            
-            const tournamentStart = new Date(tournament.StartDate);
-            const tournamentEnd = tournament.EndDate ? new Date(tournament.EndDate) : tournamentStart;
+  // Get categories with counts and filter out empty ones
+  const getCategoriesWithCounts = () => {
+    return availableCategories.map(category => {
+      const count = tournaments.filter(tournament => {
+        if (!tournament.StartDate) return false;
+        if (tournament.Status && tournament.Status.toLowerCase().includes('cancelled')) return false;
+        
+        const tournamentStart = new Date(tournament.StartDate);
+        const tournamentEnd = tournament.EndDate ? new Date(tournament.EndDate) : tournamentStart;
+        
+        let periodOverlap = false;
+        
+        switch (timePeriod) {
+          case 'Week':
             const weekStart = new Date(currentWeekStart);
             const weekEnd = new Date(currentWeekStart);
             weekEnd.setDate(weekStart.getDate() + 6);
+            periodOverlap = tournamentStart <= weekEnd && tournamentEnd >= weekStart;
+            break;
             
-            const weekOverlap = tournamentStart <= weekEnd && tournamentEnd >= weekStart;
-            return weekOverlap && matchesTournamentCategory(tournament, category);
-          }).length;
-          
-          return (
-            <TouchableOpacity
-              key={category}
-              style={[
-                styles.filterButton,
-                selectedType === category && styles.activeFilterButton
-              ]}
-              onPress={() => setSelectedType(category)}
-            >
-              <Text style={[
-                styles.filterButtonText,
-                selectedType === category && styles.activeFilterButtonText
-              ]}>
-                {category} ({categoryCount})
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+          case 'Month':
+            const monthStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+            const monthEnd = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
+            periodOverlap = tournamentStart <= monthEnd && tournamentEnd >= monthStart;
+            break;
+            
+          case 'Year':
+            const yearStart = new Date(currentYear.getFullYear(), 0, 1);
+            const yearEnd = new Date(currentYear.getFullYear(), 11, 31);
+            periodOverlap = tournamentStart <= yearEnd && tournamentEnd >= yearStart;
+            break;
+        }
+        
+        return periodOverlap && matchesTournamentCategory(tournament, category);
+      }).length;
+      
+      return { category, count };
+    }).filter(item => item.count > 0 || item.category === 'ALL'); // Keep ALL even if 0, filter others
+  };
+
+  const renderCategoryDropdown = () => {
+    const categoriesWithCounts = getCategoriesWithCounts();
+    const selectedCategory = categoriesWithCounts.find(item => item.category === selectedType);
+    
+    return (
+      <View style={styles.dropdownContainer}>
+        <TouchableOpacity 
+          style={styles.dropdownButton}
+          onPress={() => setShowDropdown(!showDropdown)}
+        >
+          <Text style={styles.dropdownButtonText}>
+            {selectedCategory ? `${selectedCategory.category} (${selectedCategory.count})` : 'Select Category'}
+          </Text>
+          <Text style={styles.dropdownArrow}>
+            {showDropdown ? '▲' : '▼'}
+          </Text>
+        </TouchableOpacity>
+        
+        {showDropdown && (
+          <View style={styles.dropdownList}>
+            {categoriesWithCounts.map((item) => (
+              <TouchableOpacity
+                key={item.category}
+                style={[
+                  styles.dropdownItem,
+                  selectedType === item.category && styles.activeDropdownItem
+                ]}
+                onPress={() => {
+                  setSelectedType(item.category);
+                  setShowDropdown(false);
+                }}
+              >
+                <Text style={[
+                  styles.dropdownItemText,
+                  selectedType === item.category && styles.activeDropdownItemText
+                ]}>
+                  {item.category} ({item.count})
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+      </View>
     );
   };
 
-  const renderWeekNavigator = () => {
-    const isCurrentWeek = getWeekStart(new Date()).getTime() === currentWeekStart.getTime();
-    const weekInfo = isCurrentWeek ? '📅 This Week' : formatWeekRange(currentWeekStart);
+  const renderTimePeriodSelector = () => {
+    const periods: ('Week' | 'Month' | 'Year')[] = ['Week', 'Month', 'Year'];
+    
+    return (
+      <View style={styles.periodSelectorContainer}>
+        {periods.map((period) => (
+          <TouchableOpacity
+            key={period}
+            style={[
+              styles.periodButton,
+              timePeriod === period && styles.activePeriodButton
+            ]}
+            onPress={() => setTimePeriod(period)}
+          >
+            <Text style={[
+              styles.periodButtonText,
+              timePeriod === period && styles.activePeriodButtonText
+            ]}>
+              {period}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
+  };
+
+  const renderDateNavigator = () => {
+    let displayInfo = '';
+    let isCurrentPeriod = false;
+    
+    switch (timePeriod) {
+      case 'Week':
+        isCurrentPeriod = getWeekStart(new Date()).getTime() === currentWeekStart.getTime();
+        displayInfo = isCurrentPeriod ? '📅 This Week' : formatWeekRange(currentWeekStart);
+        break;
+      case 'Month':
+        const currentMonthTime = new Date().getMonth();
+        const currentYearTime = new Date().getFullYear();
+        isCurrentPeriod = currentMonth.getMonth() === currentMonthTime && currentMonth.getFullYear() === currentYearTime;
+        displayInfo = isCurrentPeriod ? '📅 This Month' : formatMonth(currentMonth);
+        break;
+      case 'Year':
+        isCurrentPeriod = currentYear.getFullYear() === new Date().getFullYear();
+        displayInfo = isCurrentPeriod ? '📅 This Year' : formatYear(currentYear);
+        break;
+    }
     
     return (
       <View style={styles.weekNavigatorContainer}>
         <View style={styles.weekNavigator}>
           <TouchableOpacity 
             style={styles.weekNavButton}
-            onPress={() => navigateWeek('prev')}
+            onPress={() => navigatePeriod('prev')}
           >
             <Text style={styles.weekNavButtonText}>◀</Text>
           </TouchableOpacity>
           
           <View style={styles.weekDisplayContainer}>
-            <Text style={styles.weekDisplayText}>{weekInfo}</Text>
+            <Text style={styles.weekDisplayText}>{displayInfo}</Text>
             <Text style={styles.weekTournamentCount}>
               {filteredTournaments.length} tournaments • {selectedType}
             </Text>
@@ -544,18 +727,20 @@ const TournamentSelectionScreen: React.FC = () => {
           
           <TouchableOpacity 
             style={styles.weekNavButton}
-            onPress={() => navigateWeek('next')}
+            onPress={() => navigatePeriod('next')}
           >
             <Text style={styles.weekNavButtonText}>▶</Text>
           </TouchableOpacity>
         </View>
         
-        {!isCurrentWeek && (
+        {!isCurrentPeriod && (
           <TouchableOpacity 
             style={styles.todayButton}
-            onPress={goToCurrentWeek}
+            onPress={goToCurrentPeriod}
           >
-            <Text style={styles.todayButtonText}>Today</Text>
+            <Text style={styles.todayButtonText}>
+              {timePeriod === 'Week' ? 'This Week' : timePeriod === 'Month' ? 'This Month' : 'This Year'}
+            </Text>
           </TouchableOpacity>
         )}
       </View>
@@ -584,14 +769,17 @@ const TournamentSelectionScreen: React.FC = () => {
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Choose a Tournament</Text>
-      </View>
-      
-      {renderWeekNavigator()}
-      
-      {renderFilterTabs()}
+    <TouchableWithoutFeedback onPress={() => setShowDropdown(false)}>
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Choose a Tournament</Text>
+        </View>
+        
+        {renderTimePeriodSelector()}
+        
+        {renderDateNavigator()}
+        
+        {renderCategoryDropdown()}
       
       <FlatList
         data={filteredTournaments}
@@ -622,7 +810,8 @@ const TournamentSelectionScreen: React.FC = () => {
           </Text>
         </View>
       )}
-    </View>
+      </View>
+    </TouchableWithoutFeedback>
   );
 };
 
@@ -688,38 +877,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     textAlign: 'center',
-  },
-  filterContainer: {
-    marginBottom: 24,
-  },
-  filterScrollContainer: {
-    paddingHorizontal: 24,
-    paddingRight: 48, // Extra padding for scroll
-    flexDirection: 'row', // Required for horizontal ScrollView
-  },
-  filterButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    marginRight: 12,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#1B365D',
-    backgroundColor: 'transparent',
-    minHeight: 36,
-    justifyContent: 'center',
-    flexShrink: 0, // Prevent button shrinking in scroll
-  },
-  activeFilterButton: {
-    backgroundColor: '#1B365D',
-  },
-  filterButtonText: {
-    color: '#1B365D',
-    fontWeight: '600',
-    fontSize: 14,
-    textAlign: 'center',
-  },
-  activeFilterButtonText: {
-    color: '#FFFFFF',
   },
   list: {
     flex: 1,
@@ -794,9 +951,108 @@ const styles = StyleSheet.create({
     color: '#4A90A4',
     textAlign: 'center',
   },
-  // Week Tournament Carousel Styles
-  carouselSection: {
+  // Period Selector Styles
+  periodSelectorContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    marginBottom: 16,
+  },
+  periodButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    marginHorizontal: 4,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#1B365D',
+    backgroundColor: 'transparent',
+    minWidth: 70,
+    alignItems: 'center',
+  },
+  activePeriodButton: {
+    backgroundColor: '#1B365D',
+  },
+  periodButtonText: {
+    color: '#1B365D',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  activePeriodButtonText: {
+    color: '#FFFFFF',
+  },
+  // Dropdown Styles
+  dropdownContainer: {
+    paddingHorizontal: 24,
     marginBottom: 24,
+    position: 'relative',
+    zIndex: 1000,
+  },
+  dropdownButton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  dropdownButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1B365D',
+    flex: 1,
+  },
+  dropdownArrow: {
+    fontSize: 14,
+    color: '#6B7280',
+    fontWeight: 'bold',
+  },
+  dropdownList: {
+    position: 'absolute',
+    top: '100%',
+    left: 24,
+    right: 24,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 8,
+    maxHeight: 200,
+    zIndex: 1001,
+  },
+  dropdownItem: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  activeDropdownItem: {
+    backgroundColor: '#F0F9FF',
+  },
+  dropdownItemText: {
+    fontSize: 16,
+    color: '#374151',
+  },
+  activeDropdownItemText: {
+    color: '#1B365D',
+    fontWeight: '600',
   },
   weekNavigatorContainer: {
     paddingHorizontal: 24,

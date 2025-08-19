@@ -313,11 +313,180 @@ export class VisApiService implements IVisApiService {
   }
 
   /**
+   * Format XML for readable logging
+   */
+  static formatXmlForLogging(xmlText: string): string {
+    try {
+      // Remove excessive whitespace and format for better readability
+      let formatted = xmlText
+        .replace(/>\s+</g, '><') // Remove whitespace between tags
+        .replace(/</g, '\n<')     // New line before each tag
+        .trim();
+      
+      // Add indentation for nested tags
+      let indentLevel = 0;
+      const lines = formatted.split('\n');
+      const indentedLines = lines.map(line => {
+        if (line.includes('</') && !line.includes('/>')) {
+          indentLevel--;
+        }
+        const indentedLine = '  '.repeat(Math.max(0, indentLevel)) + line;
+        if (line.includes('<') && !line.includes('</') && !line.includes('/>')) {
+          indentLevel++;
+        }
+        return indentedLine;
+      });
+      
+      return indentedLines.join('\n');
+    } catch (error) {
+      // If formatting fails, return first 1000 characters
+      return xmlText.substring(0, 1000) + (xmlText.length > 1000 ? '...' : '');
+    }
+  }
+
+  /**
+   * Try to get basic tournament details with common information fields
+   */
+  static async tryBasicTournamentDetails(tournamentNo: string): Promise<Tournament | null> {
+    try {
+      console.log(`🏐 DEBUG: Trying basic tournament details for ${tournamentNo}...`);
+      
+      // Try with common tournament information fields
+      const fieldsToTry = [
+        'No Code Name Title City Country CountryName Location StartDate EndDate Status Type Category Series Prize PrizeMoney Currency Venue Courts Surface Gender ContactName ContactEmail ContactPhone Website Description',
+        'No Code Name Title City Country StartDate EndDate Status Type Category Series Prize Venue Courts Surface',
+        'No Code Name Title City Country StartDate EndDate Status Type Category Prize'
+      ];
+
+      for (const fields of fieldsToTry) {
+        console.log(`🏐 DEBUG: Trying GetBeachTournament with fields: ${fields.substring(0, 50)}...`);
+        
+        const xmlRequest = `<Request Type='GetBeachTournament' Fields='${fields}' NoTournament='${tournamentNo}' />`;
+        const requestUrl = `${VIS_BASE_URL}?Request=${encodeURIComponent(xmlRequest)}`;
+        
+        try {
+          const response = await fetch(requestUrl, {
+            method: 'GET',
+            headers: {
+              'Accept': 'application/xml, text/xml',
+              'X-FIVB-App-ID': '2a9523517c52420da73d927c6d6bab23',
+            },
+          });
+
+          if (response.ok) {
+            const xmlText = await response.text();
+            console.log(`🏐 DEBUG: Basic tournament details response (${xmlText.length} chars):`);
+            console.log('🏐 DEBUG: Raw XML:', this.formatXmlForLogging(xmlText));
+            
+            const parsed = this.parseBasicTournamentDetails(xmlText);
+            if (parsed) {
+              console.log(`🏐 DEBUG: ✅ Parsed basic tournament details:`, JSON.stringify(parsed, null, 2));
+              return parsed;
+            }
+          } else {
+            console.log(`🏐 DEBUG: Basic fields failed with status ${response.status}`);
+          }
+        } catch (error) {
+          console.log(`🏐 DEBUG: Error with basic fields:`, error);
+        }
+      }
+      
+      console.log(`🏐 DEBUG: All basic field combinations failed`);
+      return null;
+    } catch (error) {
+      console.error('Error trying basic tournament details:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Parse basic tournament details from XML response
+   */
+  static parseBasicTournamentDetails(xmlText: string): Tournament | null {
+    try {
+      // Look for BeachTournament tags with attributes
+      const tournamentMatch = xmlText.match(/<BeachTournament[^>]*\/>/);
+      if (!tournamentMatch) {
+        console.log(`🏐 DEBUG: No BeachTournament tag found in response`);
+        return null;
+      }
+
+      const tournamentTag = tournamentMatch[0];
+      console.log(`🏐 DEBUG: Found tournament tag:`, this.formatXmlForLogging(tournamentTag));
+
+      // Extract attributes using regex
+      const extractAttribute = (attr: string): string | undefined => {
+        const match = tournamentTag.match(new RegExp(`${attr}="([^"]*)"`, 'i'));
+        const value = match ? match[1] : undefined;
+        if (value) {
+          console.log(`🏐 DEBUG: Extracted ${attr}: "${value}"`);
+        }
+        return value;
+      };
+
+      const tournament: Tournament = {
+        No: extractAttribute('No') || '',
+        Code: extractAttribute('Code'),
+        Name: extractAttribute('Name'),
+        Title: extractAttribute('Title'),
+        City: extractAttribute('City'),
+        Country: extractAttribute('Country'),
+        CountryName: extractAttribute('CountryName'),
+        Location: extractAttribute('Location'),
+        StartDate: extractAttribute('StartDate'),
+        EndDate: extractAttribute('EndDate'),
+        Status: extractAttribute('Status'),
+        Type: extractAttribute('Type'),
+        Category: extractAttribute('Category'),
+        Series: extractAttribute('Series'),
+        Prize: extractAttribute('Prize'),
+        PrizeMoney: extractAttribute('PrizeMoney'),
+        Currency: extractAttribute('Currency'),
+        Venue: extractAttribute('Venue'),
+        Courts: extractAttribute('Courts'),
+        Surface: extractAttribute('Surface'),
+        Gender: extractAttribute('Gender'),
+        ContactName: extractAttribute('ContactName'),
+        ContactEmail: extractAttribute('ContactEmail'),
+        ContactPhone: extractAttribute('ContactPhone'),
+        Website: extractAttribute('Website'),
+        Description: extractAttribute('Description')
+      };
+
+      // Only return if we have the basic required fields
+      if (tournament.No) {
+        console.log(`🏐 DEBUG: Successfully parsed tournament:`, {
+          No: tournament.No,
+          Name: tournament.Name,
+          Title: tournament.Title,
+          Type: tournament.Type,
+          Category: tournament.Category
+        });
+        return tournament;
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Error parsing basic tournament details:', error);
+      return null;
+    }
+  }
+
+  /**
    * Get beach tournament details including officials/referees if available
    * Uses multiple approaches including the external website pattern
    */
-  static async getBeachTournamentDetails(tournamentNo: string): Promise<any> {
+  static async getBeachTournamentDetails(tournamentNo: string): Promise<Tournament | null> {
     try {
+      console.log(`🏐 DEBUG: === TRYING TO GET DETAILED TOURNAMENT INFO FOR ${tournamentNo} ===`);
+      
+      // Try basic tournament details first with common fields
+      const basicDetails = await this.tryBasicTournamentDetails(tournamentNo);
+      if (basicDetails) {
+        console.log(`🏐 DEBUG: ✅ SUCCESS with basic tournament details!`);
+        return basicDetails;
+      }
+
       console.log(`🏐 DEBUG: === TRYING ALL METHODS TO GET REFEREE DATA FOR TOURNAMENT ${tournamentNo} ===`);
       
       // Method 1: Try to map our tournament to external website tournament number
@@ -370,7 +539,7 @@ export class VisApiService implements IVisApiService {
 
         const xmlText = await response.text();
         console.log(`🏐 DEBUG: GetBeachTournament SUCCESS with fields '${fields}'`);
-        console.log(`🏐 DEBUG: Response:`, xmlText.substring(0, 1000));
+        console.log(`🏐 DEBUG: Response:`, this.formatXmlForLogging(xmlText));
         
         const parsed = this.parseBeachTournamentDetails(xmlText);
         if (parsed && parsed.hasOfficials) {
@@ -763,7 +932,7 @@ export class VisApiService implements IVisApiService {
         if (response.ok) {
           const xmlText = await response.text();
           console.log(`🏐 DEBUG: ✅ ShowBeachEvent SUCCESS with number ${testNo}! Response length: ${xmlText.length}`);
-          console.log(`🏐 DEBUG: Raw XML (first 2000 chars):`, xmlText.substring(0, 2000));
+          console.log(`🏐 DEBUG: Formatted XML:`, this.formatXmlForLogging(xmlText));
           
           // Parse for referee data in event format
           const eventReferees = this.parseEventRefereeData(xmlText, testNo);
@@ -862,7 +1031,7 @@ export class VisApiService implements IVisApiService {
         // Only log if we get a small response (specific tournament) or if it contains our tournament
         if (xmlText.length < 10000 || xmlText.includes(`No="${tournamentNo}"`)) {
           console.log(`🏐 TOURNAMENT ${tournamentNo}: ✅ SUCCESS! Response length: ${xmlText.length} chars`);
-          console.log(`🏐 TOURNAMENT ${tournamentNo}: Raw XML:`, xmlText);
+          console.log(`🏐 TOURNAMENT ${tournamentNo}: Formatted XML:`, this.formatXmlForLogging(xmlText));
         } else {
           console.log(`🏐 TOURNAMENT ${tournamentNo}: ✅ SUCCESS but large response (${xmlText.length} chars) - filtering for our tournament...`);
         }
@@ -975,7 +1144,7 @@ export class VisApiService implements IVisApiService {
       
       // Only log full XML if it's reasonably small (specific to our tournament)
       if (xmlText.length < 5000) {
-        console.log(`🏐 TOURNAMENT ${tournamentNo}: Full XML content:`, xmlText);
+        console.log(`🏐 TOURNAMENT ${tournamentNo}: Full XML content:`, this.formatXmlForLogging(xmlText));
       } else {
         console.log(`🏐 TOURNAMENT ${tournamentNo}: Large XML response (${xmlText.length} chars) - parsing for tournament data...`);
       }
@@ -1312,7 +1481,7 @@ export class VisApiService implements IVisApiService {
 
           if (response.ok) {
             const xmlText = await response.text();
-            console.log(`🏐 DEBUG: ✅ SUCCESS! Officials tournament response (${xmlText.length} chars):`, xmlText.substring(0, 1000));
+            console.log(`🏐 DEBUG: ✅ SUCCESS! Officials tournament response (${xmlText.length} chars):`, this.formatXmlForLogging(xmlText));
             break; // Found working combination
           } else {
             console.log(`🏐 DEBUG: ❌ Officials tournament fields '${fields}' failed with status ${response.status}`);

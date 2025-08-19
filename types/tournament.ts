@@ -12,6 +12,33 @@ export interface Tournament {
   Version?: string;
   Code?: string;
   Status?: string;
+  // Additional detail fields
+  Type?: string;
+  Category?: string;
+  Series?: string;
+  League?: string;
+  Division?: string;
+  Prize?: string;
+  PrizeMoney?: string;
+  Currency?: string;
+  Venue?: string;
+  Courts?: string;
+  ContactName?: string;
+  ContactEmail?: string;
+  ContactPhone?: string;
+  Website?: string;
+  Description?: string;
+  Officials?: string;
+  Referees?: string;
+  TechnicalOfficials?: string;
+  EntryDeadline?: string;
+  WithdrawalDeadline?: string;
+  Participants?: string;
+  Teams?: string;
+  MaxTeams?: string;
+  EntryFee?: string;
+  Surface?: string;
+  Gender?: string;
 }
 
 export interface TournamentListResponse {
