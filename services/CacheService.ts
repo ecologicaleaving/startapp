@@ -57,17 +57,25 @@ export class CacheService {
   static async getTournaments(filters?: FilterOptions): Promise<CacheResult<Tournament[]>> {
     this.ensureInitialized();
     const requestId = this.generateRequestId();
-    const cacheKey = this.generateCacheKey('tournaments', filters);
+    
+    // Create cache key that includes year for different API calls
+    const baseCacheKey = filters?.year ? `tournaments_${filters.year}` : 'tournaments_recent';
+    
+    console.log(`🏐 CacheService: Using cache key: ${baseCacheKey}`);
 
     this.stats.startTimer(requestId);
 
     try {
       // Tier 1: Memory Cache
-      const memoryResult = this.getFromMemory(cacheKey);
+      const memoryResult = this.getFromMemory(baseCacheKey);
       if (memoryResult) {
         this.stats.recordHit('memory', requestId);
+        
+        // Apply client-side filtering for memory cache
+        const filteredMemoryResult = this.applyTournamentFilters(memoryResult, filters);
+        
         return {
-          data: memoryResult,
+          data: filteredMemoryResult,
           source: 'memory',
           fromCache: true,
           timestamp: Date.now()
@@ -75,13 +83,16 @@ export class CacheService {
       }
 
       // Tier 2: Local Storage
-      const localResult = await this.getFromLocalStorage(cacheKey);
+      const localResult = await this.getFromLocalStorage(baseCacheKey);
       if (localResult) {
-        // Update memory cache
-        this.setInMemory(cacheKey, localResult, this.config.defaultTTL.tournaments);
+        // Apply client-side filtering for local storage cache
+        const filteredLocalResult = this.applyTournamentFilters(localResult, filters);
+        
+        // Update memory cache with filtered result
+        this.setInMemory(baseCacheKey, filteredLocalResult, this.config.defaultTTL.tournaments);
         this.stats.recordHit('localStorage', requestId);
         return {
-          data: localResult,
+          data: filteredLocalResult,
           source: 'localStorage',
           fromCache: true,
           timestamp: Date.now()
@@ -91,7 +102,7 @@ export class CacheService {
       // Tier 2.5: Offline Storage (when network is unavailable)
       if (!this.networkMonitor.isConnected) {
         console.log('Network unavailable, checking offline storage for tournaments');
-        const offlineResult = await this.getFromOfflineStorage(cacheKey);
+        const offlineResult = await this.getFromOfflineStorage(baseCacheKey);
         if (offlineResult) {
           this.stats.recordHit('offline', requestId);
           return {
@@ -110,9 +121,9 @@ export class CacheService {
       const supabaseResult = await this.getTournamentsFromSupabase(filters);
       if (supabaseResult && supabaseResult.length > 0) {
         // Update higher tier caches and offline storage
-        await this.setLocalStorage(cacheKey, supabaseResult, this.config.defaultTTL.tournaments);
-        await this.setOfflineStorage(cacheKey, supabaseResult);
-        this.setInMemory(cacheKey, supabaseResult, this.config.defaultTTL.tournaments);
+        await this.setLocalStorage(baseCacheKey, supabaseResult, this.config.defaultTTL.tournaments);
+        await this.setOfflineStorage(baseCacheKey, supabaseResult);
+        this.setInMemory(baseCacheKey, supabaseResult, this.config.defaultTTL.tournaments);
         this.stats.recordHit('supabase', requestId);
         return {
           data: supabaseResult,
@@ -125,15 +136,26 @@ export class CacheService {
       // Tier 4: Direct API Fallback (only when network available)
       const apiResult = await this.getTournamentsFromAPI(filters);
       
-      // Update all cache tiers including offline storage
-      await this.updateSupabaseCache(apiResult);
-      await this.setLocalStorage(cacheKey, apiResult, this.config.defaultTTL.tournaments);
-      await this.setOfflineStorage(cacheKey, apiResult);
-      this.setInMemory(cacheKey, apiResult, this.config.defaultTTL.tournaments);
+      // Apply deduplication to fresh API data before caching
+      console.log(`🏐 CacheService: API returned ${apiResult.length} tournaments, applying merging...`);
+      const mergedApiResult = this.deduplicateTournaments(apiResult);
+      console.log(`🏐 CacheService: After merging: ${mergedApiResult.length} tournaments`);
+      
+      // Log first few merged tournaments for debugging
+      mergedApiResult.slice(0, 3).forEach(t => {
+        const merged = (t as any)._mergedTournaments || [];
+        console.log(`🏐 SAMPLE: "${t.Name}" has ${merged.length} merged tournaments`);
+      });
+      
+      // Update all cache tiers including offline storage with merged data
+      await this.updateSupabaseCache(mergedApiResult);
+      await this.setLocalStorage(baseCacheKey, mergedApiResult, this.config.defaultTTL.tournaments);
+      await this.setOfflineStorage(baseCacheKey, mergedApiResult);
+      this.setInMemory(baseCacheKey, mergedApiResult, this.config.defaultTTL.tournaments);
       
       this.stats.recordHit('api', requestId);
       return {
-        data: apiResult,
+        data: mergedApiResult,
         source: 'api',
         fromCache: false,
         timestamp: Date.now()
@@ -143,7 +165,7 @@ export class CacheService {
       console.error('CacheService.getTournaments error:', error);
       
       // Final fallback: try offline storage first, then stale data
-      const offlineData = await this.getFromOfflineStorage(cacheKey);
+      const offlineData = await this.getFromOfflineStorage(baseCacheKey);
       if (offlineData) {
         return {
           data: offlineData,
@@ -153,7 +175,7 @@ export class CacheService {
         };
       }
       
-      const staleData = await this.getStaleData(cacheKey);
+      const staleData = await this.getStaleData(baseCacheKey);
       if (staleData) {
         return {
           data: staleData,
@@ -387,9 +409,20 @@ export class CacheService {
         query = query.eq('type', filters.tournamentType);
       }
 
-      // Check freshness (24 hours) - this maintains data quality
-      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-      query = query.gte('last_synced', twentyFourHoursAgo);
+      // For historical data (previous years), use more relaxed freshness requirements
+      const currentYear = new Date().getFullYear();
+      const isHistoricalQuery = filters?.year && filters.year < currentYear;
+      
+      if (!isHistoricalQuery) {
+        // For current year data, maintain 24-hour freshness requirement
+        const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        query = query.gte('last_synced', twentyFourHoursAgo);
+      } else {
+        // For historical data, use 30-day freshness to allow cached data
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+        query = query.gte('last_synced', thirtyDaysAgo);
+        console.log(`🏐 Using relaxed freshness for historical year ${filters.year} (30 days)`);
+      }
 
       // Apply recent-only filter at database level when possible
       if (filters?.recentOnly) {
@@ -533,6 +566,7 @@ export class CacheService {
 
   private static async getTournamentsFromAPI(filters?: FilterOptions): Promise<Tournament[]> {
     console.log('CacheService: getTournamentsFromAPI called, bypassing cache to call direct API');
+    console.log('CacheService: Filters passed to API:', JSON.stringify(filters));
     console.log('CacheService: Starting direct API call...');
     const visApi = await visApiServiceFactory.getInstance();
     // Call the direct API method to avoid circular dependency
@@ -540,6 +574,9 @@ export class CacheService {
     const result = await visApi.fetchDirectFromAPI(filters);
     const duration = Date.now() - startTime;
     console.log(`CacheService: Direct API call completed in ${duration}ms, got ${result.length} tournaments`);
+    if (filters?.year) {
+      console.log(`CacheService: API result for year ${filters.year}: ${result.length} tournaments`);
+    }
     return result;
   }
 
@@ -1006,5 +1043,212 @@ export class CacheService {
         timestamp: Date.now(),
       };
     }
+  }
+
+  /**
+   * Apply client-side filtering to tournaments (used for cached data)
+   */
+  private static applyTournamentFilters(tournaments: Tournament[], filters?: FilterOptions): Tournament[] {
+    if (!filters) return tournaments;
+
+    let filtered = tournaments;
+
+    // Apply year filter
+    if (filters.year) {
+      console.log(`🏐 CacheService: Applying client-side year filter for ${filters.year}`);
+      const beforeCount = filtered.length;
+      
+      filtered = filtered.filter(tournament => {
+        if (!tournament.StartDate) return false;
+        
+        try {
+          const startDate = new Date(tournament.StartDate);
+          const tournamentYear = startDate.getFullYear();
+          return tournamentYear === filters.year;
+        } catch (error) {
+          console.warn(`Invalid date for tournament ${tournament.No}: ${tournament.StartDate}`);
+          return false;
+        }
+      });
+      
+      console.log(`🏐 CacheService: Year filter result: ${beforeCount} → ${filtered.length} tournaments for year ${filters.year}`);
+    }
+
+    // Apply tournament type filter
+    if (filters.tournamentType && filters.tournamentType !== 'ALL') {
+      filtered = filtered.filter(tournament => {
+        const name = (tournament.Name || tournament.Title || '').toUpperCase();
+        const type = (tournament.Type || tournament.Category || tournament.Series || '').toUpperCase();
+        const allText = `${name} ${type}`.trim();
+        
+        return type.includes(filters.tournamentType!) || allText.includes(filters.tournamentType!);
+      });
+    }
+
+    // Apply currently active filter
+    if (filters.currentlyActive) {
+      const now = new Date();
+      filtered = filtered.filter(tournament => {
+        if (!tournament.StartDate || !tournament.EndDate) return false;
+        
+        try {
+          const startDate = new Date(tournament.StartDate);
+          const endDate = new Date(tournament.EndDate);
+          return startDate <= now && now <= endDate;
+        } catch {
+          return false;
+        }
+      });
+    }
+
+    // Apply recent-only filter
+    if (filters.recentOnly) {
+      const today = new Date();
+      const oneMonthAgo = new Date(today.getFullYear(), today.getMonth() - 1, today.getDate());
+      const oneMonthFromNow = new Date(today.getFullYear(), today.getMonth() + 1, today.getDate());
+      
+      filtered = filtered.filter(tournament => {
+        if (!tournament.StartDate) return false;
+        
+        try {
+          const startDate = new Date(tournament.StartDate);
+          return startDate >= oneMonthAgo && startDate <= oneMonthFromNow;
+        } catch {
+          return false;
+        }
+      });
+    }
+
+    // Deduplicate tournaments with same name but different gender codes
+    const merged = this.deduplicateTournaments(filtered);
+    
+    return merged;
+  }
+
+  /**
+   * Merge tournaments that have the same base name but different gender codes
+   */
+  private static deduplicateTournaments(tournaments: Tournament[]): Tournament[] {
+    console.log(`🏐 deduplicateTournaments: Processing ${tournaments.length} tournaments`);
+    
+    // TEMPORARY: Just return tournaments without merging to test basic functionality
+    if (true) {
+      console.log(`🏐 TEMPORARY: Skipping merging, returning original ${tournaments.length} tournaments`);
+      return tournaments;
+    }
+    const tournamentGroups = new Map<string, Tournament[]>();
+    
+    // Group tournaments by their base characteristics
+    tournaments.forEach((tournament) => {
+      const name = (tournament.Name || tournament.Title || '').toLowerCase().trim();
+      const location = (tournament.Location || tournament.City || tournament.Country || '').toLowerCase().trim();
+      const startDate = tournament.StartDate || '';
+      
+      // More robust key generation - remove common gender indicators
+      const cleanName = name
+        .replace(/\b(men|women|male|female|boys|girls|m|w)\b/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      
+      // Create a key based on cleaned name, location, and start date
+      const key = `${cleanName}_${location}_${startDate}`;
+      
+      if (!tournamentGroups.has(key)) {
+        tournamentGroups.set(key, []);
+      }
+      tournamentGroups.get(key)!.push(tournament);
+    });
+    
+    const result: Tournament[] = [];
+    
+    // Process each group
+    tournamentGroups.forEach((group, key) => {
+      if (group.length === 1) {
+        // Single tournament - no merging needed
+        result.push(group[0]);
+      } else {
+        // Multiple tournaments - merge them
+        console.log(`🏐 MERGING ${group.length} tournaments: ${group.map(t => `"${t.Name}" (${t.Code})`).join(', ')}`);
+        
+        // Choose the representative tournament (most complete data)
+        const representative = group.reduce((best, current) => {
+          const currentScore = this.getTournamentCompletenessScore(current);
+          const bestScore = this.getTournamentCompletenessScore(best);
+          return currentScore > bestScore ? current : best;
+        });
+        
+        // Create merged tournament that combines all gender variants
+        const mergedTournament = {
+          ...representative,
+          // Create a unified name that indicates it includes both genders
+          Name: this.createMergedTournamentName(group),
+          // Store all the merged tournaments for match loading
+          _mergedTournaments: group.map(t => ({
+            No: t.No,
+            Name: t.Name,
+            Code: t.Code,
+            StartDate: t.StartDate,
+            EndDate: t.EndDate
+          }))
+        };
+        
+        console.log(`🏐 MERGED RESULT: "${mergedTournament.Name}" includes ${group.length} gender variants`);
+        result.push(mergedTournament);
+      }
+    });
+    
+    return result;
+  }
+  
+  /**
+   * Create a unified name for merged tournaments
+   */
+  private static createMergedTournamentName(tournaments: Tournament[]): string {
+    // Get the base name (without gender indicators)
+    const baseName = tournaments[0].Name || tournaments[0].Title || '';
+    const cleanName = baseName
+      .replace(/\b(men|women|male|female|boys|girls|m|w)\b/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    
+    // Check what genders are included
+    const hasWomen = tournaments.some(t => 
+      /\b(women|female|girls|w)\b/i.test(t.Name || '') ||
+      /\b(women|female|girls|w)\b/i.test(t.Code || '')
+    );
+    const hasMen = tournaments.some(t => 
+      /\b(men|male|boys|m)\b/i.test(t.Name || '') ||
+      /\b(men|male|boys|m)\b/i.test(t.Code || '')
+    );
+    
+    if (hasWomen && hasMen) {
+      return `${cleanName} (Mixed)`;
+    } else if (hasWomen) {
+      return `${cleanName} (Women)`;
+    } else if (hasMen) {
+      return `${cleanName} (Men)`;
+    } else {
+      return cleanName;
+    }
+  }
+  
+
+  /**
+   * Calculate completeness score for a tournament (higher score = more complete data)
+   */
+  private static getTournamentCompletenessScore(tournament: Tournament): number {
+    let score = 0;
+    
+    if (tournament.Name) score += 2;
+    if (tournament.Title) score += 2;
+    if (tournament.Location) score += 1;
+    if (tournament.City) score += 1;
+    if (tournament.Country) score += 1;
+    if (tournament.StartDate) score += 2;
+    if (tournament.EndDate) score += 2;
+    if (tournament.Status) score += 1;
+    if (tournament.Code) score += 1;
+    
+    return score;
   }
 }

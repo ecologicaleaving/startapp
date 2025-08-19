@@ -33,7 +33,12 @@ const TournamentDetailScreenContent: React.FC = () => {
 
   const tournament: Tournament = React.useMemo(() => {
     try {
-      return JSON.parse(tournamentData || '{}') as Tournament;
+      const parsed = JSON.parse(tournamentData || '{}') as Tournament;
+      const merged = (parsed as any)._mergedTournaments;
+      if (merged && merged.length > 1) {
+        console.log(`🏐 DETAIL: "${parsed.Name}" has ${merged.length} merged tournaments`);
+      }
+      return parsed;
     } catch {
       return {} as Tournament;
     }
@@ -176,23 +181,58 @@ const TournamentDetailScreenContent: React.FC = () => {
     try {
       let allTournamentMatches: BeachMatch[] = [];
       
-      // Load matches from current tournament
-      const currentMatches = await VisApiService.getBeachMatchList(tournament.No);
-      const currentGender = VisApiService.extractGenderFromCode(tournament.Code);
+      // Check if this tournament has merged tournaments from deduplication
+      const mergedTournaments = (tournament as any)._mergedTournaments || [];
       
-      // Add metadata to current tournament matches
-      const currentMatchesWithMeta = currentMatches.map(match => ({
-        ...match,
-        tournamentGender: currentGender,
-        tournamentNo: tournament.No,
-        tournamentCode: tournament.Code
-      }));
+      console.log(`🏐 TOURNAMENT DETAIL: Loading matches for "${tournament.Name}"`);
+      console.log(`🏐 MERGED TOURNAMENTS: Found ${mergedTournaments.length} tournaments`);
+      console.log(`🏐 MERGED DETAIL:`, mergedTournaments);
       
-      allTournamentMatches = [...currentMatchesWithMeta];
+      if (mergedTournaments.length > 1) {
+        console.log(`🏐 LOADING MATCHES: ${mergedTournaments.length} tournaments`);
+        
+        // Load matches from all merged tournaments (including the main one)
+        for (const mergedTournament of mergedTournaments) {
+          try {
+            const matches = await VisApiService.getBeachMatchList(mergedTournament.No);
+            const gender = VisApiService.extractGenderFromCode(mergedTournament.Code);
+            
+            // Add metadata to matches
+            const matchesWithMeta = matches.map(match => ({
+              ...match,
+              tournamentGender: gender,
+              tournamentNo: mergedTournament.No,
+              tournamentCode: mergedTournament.Code,
+              tournamentName: mergedTournament.Name
+            }));
+            
+            allTournamentMatches = [...allTournamentMatches, ...matchesWithMeta];
+            console.log(`🏐 LOADED: ${matches.length} matches (${gender}) from ${mergedTournament.Name}`);
+          } catch (error) {
+            console.warn(`Failed to load matches for ${mergedTournament.Name}:`, error);
+          }
+        }
+      }
       
-      // Find related tournaments (men's/women's versions)
-      if (tournament.Code) {
+      // Fallback: If no merged tournaments, use the old method to find related tournaments
+      if (mergedTournaments.length === 0 && tournament.Code) {
+        console.log(`🏐 No merged tournaments found, falling back to findRelatedTournaments`);
         try {
+          // Load matches from current tournament
+          const currentMatches = await VisApiService.getBeachMatchList(tournament.No);
+          const currentGender = VisApiService.extractGenderFromCode(tournament.Code);
+          
+          // Add metadata to current tournament matches
+          const currentMatchesWithMeta = currentMatches.map(match => ({
+            ...match,
+            tournamentGender: currentGender,
+            tournamentNo: tournament.No,
+            tournamentCode: tournament.Code,
+            tournamentName: tournament.Name
+          }));
+          
+          allTournamentMatches = [...currentMatchesWithMeta];
+          
           const relatedTournaments = await VisApiService.findRelatedTournaments(tournament);
           console.log(`Found ${relatedTournaments.length} related tournaments for ${tournament.Code}`);
           
@@ -209,7 +249,8 @@ const TournamentDetailScreenContent: React.FC = () => {
                   ...match,
                   tournamentGender: relatedGender,
                   tournamentNo: relatedTournament.No,
-                  tournamentCode: relatedTournament.Code
+                  tournamentCode: relatedTournament.Code,
+                  tournamentName: relatedTournament.Name
                 }));
                 
                 allTournamentMatches = [...allTournamentMatches, ...relatedMatchesWithMeta];

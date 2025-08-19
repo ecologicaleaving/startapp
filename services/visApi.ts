@@ -134,11 +134,23 @@ export class VisApiService implements IVisApiService {
     tournamentType?: TournamentType;
   }): Promise<Tournament[]> {
     try {
-      // Use the proper VIS API call for beach volleyball tournaments (all recent ones)
-      const xmlRequest = "<Request Type='GetBeachTournamentList' Fields='No Code Name StartDate EndDate' />";
-      const requestUrl = `${VIS_BASE_URL}?Request=${encodeURIComponent(xmlRequest)}`;
+      // Build XML request with date filters when year is specified
+      let xmlRequest: string;
       
-      console.log('Fetching recent beach volleyball tournaments from direct API...');
+      if (filterOptions?.year) {
+        // Request tournaments for specific year with date range
+        const yearStart = `${filterOptions.year}-01-01`;
+        const yearEnd = `${filterOptions.year}-12-31`;
+        xmlRequest = `<Request Type='GetBeachTournamentList' Fields='No Code Name StartDate EndDate' StartDate='${yearStart}' EndDate='${yearEnd}' />`;
+        console.log(`🏐 API: Requesting tournaments for year ${filterOptions.year} (${yearStart} to ${yearEnd})`);
+      } else {
+        // Default request for recent tournaments
+        xmlRequest = "<Request Type='GetBeachTournamentList' Fields='No Code Name StartDate EndDate' />";
+        console.log('🏐 API: Requesting recent tournaments (default)');
+      }
+      
+      const requestUrl = `${VIS_BASE_URL}?Request=${encodeURIComponent(xmlRequest)}`;
+      console.log(`🏐 API: Full request URL: ${requestUrl}`);
       
       // Add timeout to prevent hanging
       const controller = new AbortController();
@@ -161,29 +173,117 @@ export class VisApiService implements IVisApiService {
 
       const xmlText = await response.text();
       const allTournaments = this.parseBeachTournamentList(xmlText);
+      console.log(`🏐 Parsed ${allTournaments.length} total tournaments from API`);
       
-      // Filter tournaments to only show those within +/- 1 month from today
-      const today = new Date();
-      const oneMonthAgo = new Date(today.getFullYear(), today.getMonth() - 1, today.getDate());
-      const oneMonthFromNow = new Date(today.getFullYear(), today.getMonth() + 1, today.getDate());
-      
-      const recentTournaments = allTournaments.filter(tournament => {
-        if (!tournament.StartDate) return false;
-        
-        try {
-          const startDate = new Date(tournament.StartDate);
-          const isWithinRange = startDate >= oneMonthAgo && startDate <= oneMonthFromNow;
-          
-          if (!isWithinRange) {
-            console.log(`Filtering out old tournament: ${tournament.Name} (${tournament.StartDate})`);
+      // Debug: Show what years are available in the API data
+      const yearsAvailable = new Set<number>();
+      const monthsAvailable = new Set<string>();
+      allTournaments.forEach(tournament => {
+        if (tournament.StartDate) {
+          try {
+            const startDate = new Date(tournament.StartDate);
+            const year = startDate.getFullYear();
+            const month = startDate.getMonth() + 1;
+            yearsAvailable.add(year);
+            monthsAvailable.add(`${year}-${month.toString().padStart(2, '0')}`);
+          } catch (error) {
+            // Invalid date, skip
           }
-          
-          return isWithinRange;
-        } catch (error) {
-          console.warn(`Invalid date for tournament ${tournament.No}: ${tournament.StartDate}`);
-          return false;
         }
       });
+      console.log(`🏐 Years available in API data: ${Array.from(yearsAvailable).sort().join(', ')}`);
+      console.log(`🏐 Months available in API data: ${Array.from(monthsAvailable).sort().join(', ')}`);
+      
+      // Show date range of tournaments
+      const dates = allTournaments
+        .map(t => t.StartDate)
+        .filter(Boolean)
+        .map(date => new Date(date))
+        .sort((a, b) => a.getTime() - b.getTime());
+      
+      if (dates.length > 0) {
+        console.log(`🏐 Tournament date range: ${dates[0].toISOString().split('T')[0]} to ${dates[dates.length - 1].toISOString().split('T')[0]}`);
+      }
+      
+      // Apply filtering based on parameters
+      let filteredTournaments = allTournaments;
+      
+      if (filterOptions?.year) {
+        // Filter by specific year when year is provided
+        console.log(`🏐 Filtering tournaments for requested year: ${filterOptions.year}`);
+        const beforeFilterCount = allTournaments.length;
+        
+        filteredTournaments = allTournaments.filter(tournament => {
+          if (!tournament.StartDate) return false;
+          
+          try {
+            const startDate = new Date(tournament.StartDate);
+            const tournamentYear = startDate.getFullYear();
+            const isMatchingYear = tournamentYear === filterOptions.year;
+            
+            return isMatchingYear;
+          } catch (error) {
+            console.warn(`Invalid date for tournament ${tournament.No}: ${tournament.StartDate}`);
+            return false;
+          }
+        });
+        
+        console.log(`🏐 Year filtering result: ${beforeFilterCount} → ${filteredTournaments.length} tournaments for year ${filterOptions.year}`);
+        
+        // Special debug for 2024
+        if (filterOptions.year === 2024) {
+          console.log('🏐 SPECIAL DEBUG FOR 2024:');
+          console.log('🏐 Sample tournaments with dates:');
+          allTournaments.slice(0, 5).forEach(t => {
+            if (t.StartDate) {
+              const startDate = new Date(t.StartDate);
+              const year = startDate.getFullYear();
+              console.log(`  - ${t.Name}: ${t.StartDate} (year: ${year})`);
+            }
+          });
+          
+          const tournaments2024 = allTournaments.filter(t => {
+            if (!t.StartDate) return false;
+            try {
+              const startDate = new Date(t.StartDate);
+              return startDate.getFullYear() === 2024;
+            } catch {
+              return false;
+            }
+          });
+          console.log(`🏐 Found ${tournaments2024.length} tournaments specifically for 2024`);
+          if (tournaments2024.length > 0) {
+            console.log('🏐 2024 tournaments found:', tournaments2024.slice(0, 3).map(t => `${t.Name} (${t.StartDate})`));
+          }
+        }
+      } else if (filterOptions?.recentOnly !== false) {
+        // Default behavior: filter to recent tournaments (within +/- 1 month from today)
+        console.log('🏐 Applying default recent-only filter (±1 month)');
+        const today = new Date();
+        const oneMonthAgo = new Date(today.getFullYear(), today.getMonth() - 1, today.getDate());
+        const oneMonthFromNow = new Date(today.getFullYear(), today.getMonth() + 1, today.getDate());
+        
+        filteredTournaments = allTournaments.filter(tournament => {
+          if (!tournament.StartDate) return false;
+          
+          try {
+            const startDate = new Date(tournament.StartDate);
+            const isWithinRange = startDate >= oneMonthAgo && startDate <= oneMonthFromNow;
+            
+            if (!isWithinRange) {
+              console.log(`Filtering out old tournament: ${tournament.Name} (${tournament.StartDate})`);
+            }
+            
+            return isWithinRange;
+          } catch (error) {
+            console.warn(`Invalid date for tournament ${tournament.No}: ${tournament.StartDate}`);
+            return false;
+          }
+        });
+      }
+      
+      const recentTournaments = filteredTournaments;
+      console.log(`🏐 After filtering: ${recentTournaments.length} tournaments remain`);
       
       // Sort tournaments by start date (ascending - earliest first)
       const sortedTournaments = recentTournaments.sort((a, b) => {
@@ -199,7 +299,7 @@ export class VisApiService implements IVisApiService {
         }
       });
       
-      console.log(`Found ${allTournaments.length} running tournaments, ${sortedTournaments.length} within +/-1 month (sorted by date):`);
+      console.log(`🏐 Final result: ${sortedTournaments.length} tournaments after filtering and sorting:`);
       
       // Debug tournament classification
       const tournamentsByType = {

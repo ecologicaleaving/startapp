@@ -39,6 +39,14 @@ export interface Tournament {
   EntryFee?: string;
   Surface?: string;
   Gender?: string;
+  // Internal field for tracking merged tournaments during deduplication
+  _mergedTournaments?: Array<{
+    No: string;
+    Name?: string;
+    Code?: string;
+    StartDate?: string;
+    EndDate?: string;
+  }>;
 }
 
 export interface TournamentListResponse {

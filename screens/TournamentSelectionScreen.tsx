@@ -300,20 +300,25 @@ const TournamentSelectionScreen: React.FC = () => {
       setLoading(true);
       setError(null);
       
-      console.log(`Loading tournaments, force refresh: ${forceRefresh}`);
+      console.log(`🏐 Loading tournaments, force refresh: ${forceRefresh}`);
       
-      // Force fresh data by bypassing cache system - load ALL tournaments
+      // Use cache system for optimal performance
       const currentYearNumber = currentYear.getFullYear();
-      console.log(`Loading tournaments for year: ${currentYearNumber}`);
+      console.log(`🏐 TournamentSelectionScreen: Loading tournaments for year: ${currentYearNumber}`);
+      console.log(`🏐 TournamentSelectionScreen: Current year object:`, currentYear);
+      console.log(`🏐 TournamentSelectionScreen: Time period:`, timePeriod);
       
-      const tournamentList = await VisApiService.fetchDirectFromAPI({ 
+      // Import CacheService dynamically to avoid circular dependencies
+      const { CacheService } = await import('../services/CacheService');
+      const cacheResult = await CacheService.getTournaments({ 
         recentOnly: false,  // Get all tournaments, not just recent
         tournamentType: undefined,  // Get all types, filter client-side
         year: currentYearNumber  // Use selected year from time period selector
       });
       
-      console.log(`Loaded ${tournamentList.length} total tournaments`);
-      console.log('Tournament sample:', tournamentList.slice(0, 2));
+      const tournamentList = cacheResult.data;
+      console.log(`🏐 Loaded ${tournamentList.length} total tournaments from ${cacheResult.source}`);
+      console.log('🏐 Tournament sample:', tournamentList.slice(0, 2));
       
       // Extract and set available categories from tournament data
       const categories = extractTournamentCategories(tournamentList);
@@ -337,21 +342,31 @@ const TournamentSelectionScreen: React.FC = () => {
     // No need to reload tournaments from API
   }, [selectedType]);
 
-  // Sync time periods when switching modes
+  // Sync time periods when switching modes (preserve user selections)
   useEffect(() => {
     const now = new Date();
     switch (timePeriod) {
       case 'Week':
-        setCurrentWeekStart(getWeekStart(now));
+        // Only reset to current week if we're switching from a different period
+        // and the current week is in a different period than what was selected
+        if (currentWeekStart.getFullYear() !== now.getFullYear() || 
+            Math.abs(currentWeekStart.getTime() - now.getTime()) > 365 * 24 * 60 * 60 * 1000) {
+          setCurrentWeekStart(getWeekStart(now));
+        }
         break;
       case 'Month':
-        setCurrentMonth(now);
+        // Only reset to current month if we're switching from a different period
+        // and the current month is in a different year than what was selected
+        if (currentMonth.getFullYear() !== now.getFullYear()) {
+          setCurrentMonth(now);
+        }
         break;
       case 'Year':
-        setCurrentYear(now);
+        // Don't automatically reset year - preserve user selection
+        // Only set to current year on first load if year is not set
         break;
     }
-  }, [timePeriod]);
+  }, [timePeriod, currentWeekStart, currentMonth]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -363,9 +378,20 @@ const TournamentSelectionScreen: React.FC = () => {
   }, [loadTournaments]);
 
   const handleTournamentPress = (tournament: Tournament) => {
+    const merged = (tournament as any)._mergedTournaments;
+    if (merged && merged.length > 1) {
+      console.log(`🏐 CLICKED: "${tournament.Name}" (${merged.length} merged tournaments)`);
+    }
+    
+    // Ensure _mergedTournaments is preserved in JSON serialization
+    const tournamentWithMerged = {
+      ...tournament,
+      _mergedTournaments: merged
+    };
+    
     router.push({
       pathname: '/tournament-detail',
-      params: { tournamentData: JSON.stringify(tournament) }
+      params: { tournamentData: JSON.stringify(tournamentWithMerged) }
     });
   };
 
@@ -635,26 +661,32 @@ const TournamentSelectionScreen: React.FC = () => {
         
         {showDropdown && (
           <View style={styles.dropdownList}>
-            {categoriesWithCounts.map((item) => (
-              <TouchableOpacity
-                key={item.category}
-                style={[
-                  styles.dropdownItem,
-                  selectedType === item.category && styles.activeDropdownItem
-                ]}
-                onPress={() => {
-                  setSelectedType(item.category);
-                  setShowDropdown(false);
-                }}
-              >
-                <Text style={[
-                  styles.dropdownItemText,
-                  selectedType === item.category && styles.activeDropdownItemText
-                ]}>
-                  {item.category} ({item.count})
-                </Text>
-              </TouchableOpacity>
-            ))}
+            <ScrollView 
+              style={styles.dropdownScroll}
+              showsVerticalScrollIndicator={false}
+              nestedScrollEnabled={true}
+            >
+              {categoriesWithCounts.map((item) => (
+                <TouchableOpacity
+                  key={item.category}
+                  style={[
+                    styles.dropdownItem,
+                    selectedType === item.category && styles.activeDropdownItem
+                  ]}
+                  onPress={() => {
+                    setSelectedType(item.category);
+                    setShowDropdown(false);
+                  }}
+                >
+                  <Text style={[
+                    styles.dropdownItemText,
+                    selectedType === item.category && styles.activeDropdownItemText
+                  ]}>
+                    {item.category} ({item.count})
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           </View>
         )}
       </View>
@@ -1036,6 +1068,9 @@ const styles = StyleSheet.create({
     elevation: 8,
     maxHeight: 200,
     zIndex: 1001,
+  },
+  dropdownScroll: {
+    maxHeight: 180, // Slightly less than dropdownList to account for padding
   },
   dropdownItem: {
     paddingHorizontal: 16,
