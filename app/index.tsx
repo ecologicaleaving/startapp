@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Radio, Award, Calendar } from 'lucide-react';
+import WhistleLogo from '../components/WhistleLogo';
 
 const { width, height } = Dimensions.get('window');
 
@@ -70,6 +71,9 @@ export default function Index() {
         >
           {/* Top Section */}
           <View style={styles.topSection}>
+            {/* Whistle Logo */}
+            <WhistleLogo size={280} style={styles.logo} />
+            
             {/* App Name - Moved higher */}
             <Text style={styles.appName}>BeachRef</Text>
             <Text style={styles.appTagline}>Referee Assignment and Match Result Monitor</Text>
@@ -174,9 +178,9 @@ const styles = StyleSheet.create({
   contentContainer: {
     alignItems: 'center',
     paddingHorizontal: 40,
-    marginTop: -80, // Alza tutto il contenuto
-    justifyContent: 'space-between',
-    flex: 0.7,
+    marginTop: -40, // Ridotto per centrare meglio
+    justifyContent: 'center',
+    flex: 0.8,
   },
   appName: {
     fontSize: 48,
@@ -190,19 +194,30 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#B8D4E3',
     textAlign: 'center',
-    marginBottom: 40,
+    marginBottom: 24,
     fontWeight: '500',
   },
   topSection: {
     alignItems: 'center',
-    flex: 1,
     justifyContent: 'center',
+  },
+  logo: {
+    marginBottom: 16,
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 8,
   },
   featuresContainer: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     width: '100%',
-    marginTop: 40,
+    marginTop: 20,
     paddingHorizontal: 20,
   },
   featureItem: {
@@ -229,6 +244,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: 40,
     shadowColor: '#FF6B35',
     shadowOffset: {
       width: 0,

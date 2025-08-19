@@ -16,6 +16,7 @@ import { useRouter } from 'expo-router';
 import { Clock } from 'lucide-react';
 import { Tournament } from '../types/tournament';
 import { VisApiService } from '../services/visApi';
+import NavigationHeader from '../components/navigation/NavigationHeader';
 
 interface TournamentCardProps {
   tournament: Tournament;
@@ -72,19 +73,14 @@ const TournamentCard: React.FC<TournamentCardProps> = ({ tournament, onPress }) 
     // Try different combinations of available location data
     const city = tournament.City;
     const country = tournament.CountryName || tournament.Country;
-    const inferredCountry = inferCountryFromName(tournament.Name);
     
     if (city && country) {
       return `${city}, ${country}`;
     }
     
-    // If we inferred a country, show it
-    if (inferredCountry) {
-      const suffix = !country ? ` [Inferred: ${inferredCountry}]` : '';
-      return city ? `${city}, ${inferredCountry}${suffix}` : `${inferredCountry}${suffix}`;
-    }
-    
-    return tournament.Location || city || country || 'Unknown Location';
+    // Only return location if we have explicit location data, city, or country
+    // Don't show fallback text or try to infer from title
+    return tournament.Location || city || country || null;
   };
 
   const getDateRange = () => {
@@ -155,7 +151,8 @@ const LiveTournamentCard: React.FC<LiveTournamentCardProps> = ({ tournament, onP
       return `${city}, ${country}`;
     }
     
-    return tournament.Location || city || country;
+    // Only return location if we have explicit location data, city, or country
+    return tournament.Location || city || country || null;
   };
 
   return (
@@ -198,7 +195,8 @@ const WeekTournamentCard: React.FC<WeekTournamentCardProps> = ({ tournament, onP
       return `${city}, ${country}`;
     }
     
-    return tournament.Location || city || country;
+    // Only return location if we have explicit location data, city, or country
+    return tournament.Location || city || country || null;
   };
 
   const getStatus = () => {
@@ -248,23 +246,24 @@ const WeekTournamentCard: React.FC<WeekTournamentCardProps> = ({ tournament, onP
 
 const TournamentSelectionScreen: React.FC = () => {
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [tournamentLoading, setTournamentLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<string>('ALL');
   const [availableCategories, setAvailableCategories] = useState<string[]>(['ALL']);
   const [showDropdown, setShowDropdown] = useState(false);
   const [currentWeekStart, setCurrentWeekStart] = useState<Date>(getWeekStart(new Date()));
-  const [timePeriod, setTimePeriod] = useState<'Week' | 'Month' | 'Year'>('Week');
+  const [timePeriod, setTimePeriod] = useState<'Week' | 'Month' | 'Year'>('Month');
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [currentYear, setCurrentYear] = useState<Date>(new Date());
   const router = useRouter();
 
-  // Helper function to get Monday of current week
+  // Helper function to get Sunday of current week
   function getWeekStart(date: Date): Date {
     const d = new Date(date);
-    const day = d.getDay();
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
+    const day = d.getDay(); // 0 = Sunday, 1 = Monday, etc.
+    const diff = d.getDate() - day; // Go back to Sunday (day 0)
     return new Date(d.setDate(diff));
   }
 
@@ -287,7 +286,7 @@ const TournamentSelectionScreen: React.FC = () => {
 
   // Helper function to format month
   function formatMonth(date: Date): string {
-    return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
   }
 
   // Helper function to format year
@@ -295,9 +294,13 @@ const TournamentSelectionScreen: React.FC = () => {
     return date.getFullYear().toString();
   }
 
-  const loadTournaments = useCallback(async (forceRefresh = false) => {
+  const loadTournaments = useCallback(async (forceRefresh = false, isInitial = false) => {
     try {
-      setLoading(true);
+      if (isInitial) {
+        setInitialLoading(true);
+      } else {
+        setTournamentLoading(true);
+      }
       setError(null);
       
       console.log(`🏐 Loading tournaments, force refresh: ${forceRefresh}`);
@@ -328,13 +331,20 @@ const TournamentSelectionScreen: React.FC = () => {
       setError(err instanceof Error ? err.message : 'An error occurred');
       Alert.alert('Error', 'Failed to load tournaments. Please check your connection.');
     } finally {
-      setLoading(false);
+      setInitialLoading(false);
+      setTournamentLoading(false);
     }
-  }, [currentYear]);  // Add currentYear dependency so tournaments reload when year changes
+  }, [currentYear, timePeriod]);
 
   useEffect(() => {
-    loadTournaments();
-  }, [loadTournaments]);
+    loadTournaments(false, true); // Initial load
+  }, []);
+
+  // Handle currentYear changes with tournament loading (not full page reload)
+  useEffect(() => {
+    if (initialLoading) return; // Skip during initial load
+    loadTournaments(false, false); // Reload tournaments for new year, but don't show full page loading
+  }, [currentYear]);
 
   // Separate effect for category changes - only update filtered results, don't reload API
   useEffect(() => {
@@ -479,26 +489,43 @@ const TournamentSelectionScreen: React.FC = () => {
 
   // Navigate based on time period
   const navigatePeriod = (direction: 'prev' | 'next') => {
+    const currentYearNum = new Date().getFullYear();
+    const minYear = currentYearNum - 5; // Allow 5 years back
+    const maxYear = currentYearNum + 2; // Allow 2 years forward
+    
     switch (timePeriod) {
       case 'Week':
         const newWeekStart = new Date(currentWeekStart);
         const daysToMove = direction === 'next' ? 7 : -7;
         newWeekStart.setDate(currentWeekStart.getDate() + daysToMove);
-        setCurrentWeekStart(newWeekStart);
+        
+        // Prevent navigation beyond reasonable limits
+        if (newWeekStart.getFullYear() >= minYear && newWeekStart.getFullYear() <= maxYear) {
+          setCurrentWeekStart(newWeekStart);
+        }
         break;
         
       case 'Month':
         const newMonth = new Date(currentMonth);
         const monthsToMove = direction === 'next' ? 1 : -1;
         newMonth.setMonth(currentMonth.getMonth() + monthsToMove);
-        setCurrentMonth(newMonth);
+        
+        // Prevent navigation beyond reasonable limits
+        if (newMonth.getFullYear() >= minYear && newMonth.getFullYear() <= maxYear) {
+          setCurrentMonth(newMonth);
+        }
         break;
         
       case 'Year':
         const newYear = new Date(currentYear);
         const yearsToMove = direction === 'next' ? 1 : -1;
-        newYear.setFullYear(currentYear.getFullYear() + yearsToMove);
-        setCurrentYear(newYear);
+        const targetYear = currentYear.getFullYear() + yearsToMove;
+        
+        // Prevent navigation beyond reasonable limits
+        if (targetYear >= minYear && targetYear <= maxYear) {
+          newYear.setFullYear(targetYear);
+          setCurrentYear(newYear);
+        }
         break;
     }
   };
@@ -726,17 +753,17 @@ const TournamentSelectionScreen: React.FC = () => {
     switch (timePeriod) {
       case 'Week':
         isCurrentPeriod = getWeekStart(new Date()).getTime() === currentWeekStart.getTime();
-        displayInfo = isCurrentPeriod ? '📅 This Week' : formatWeekRange(currentWeekStart);
+        displayInfo = isCurrentPeriod ? 'This Week' : formatWeekRange(currentWeekStart);
         break;
       case 'Month':
         const currentMonthTime = new Date().getMonth();
         const currentYearTime = new Date().getFullYear();
         isCurrentPeriod = currentMonth.getMonth() === currentMonthTime && currentMonth.getFullYear() === currentYearTime;
-        displayInfo = isCurrentPeriod ? '📅 This Month' : formatMonth(currentMonth);
+        displayInfo = isCurrentPeriod ? 'This Month' : formatMonth(currentMonth);
         break;
       case 'Year':
         isCurrentPeriod = currentYear.getFullYear() === new Date().getFullYear();
-        displayInfo = isCurrentPeriod ? '📅 This Year' : formatYear(currentYear);
+        displayInfo = isCurrentPeriod ? 'This Year' : formatYear(currentYear);
         break;
     }
     
@@ -752,9 +779,6 @@ const TournamentSelectionScreen: React.FC = () => {
           
           <View style={styles.weekDisplayContainer}>
             <Text style={styles.weekDisplayText}>{displayInfo}</Text>
-            <Text style={styles.weekTournamentCount}>
-              {filteredTournaments.length} tournaments • {selectedType}
-            </Text>
           </View>
           
           <TouchableOpacity 
@@ -763,23 +787,21 @@ const TournamentSelectionScreen: React.FC = () => {
           >
             <Text style={styles.weekNavButtonText}>▶</Text>
           </TouchableOpacity>
-        </View>
-        
-        {!isCurrentPeriod && (
+          
           <TouchableOpacity 
-            style={styles.todayButton}
+            style={styles.todayButtonInline}
             onPress={goToCurrentPeriod}
           >
-            <Text style={styles.todayButtonText}>
-              {timePeriod === 'Week' ? 'This Week' : timePeriod === 'Month' ? 'This Month' : 'This Year'}
+            <Text style={styles.todayButtonInlineText}>
+              Today
             </Text>
           </TouchableOpacity>
-        )}
+        </View>
       </View>
     );
   };
 
-  if (loading) {
+  if (initialLoading) {
     return (
       <View style={styles.centerContainer}>
         <ActivityIndicator size="large" color="#FF6B35" />
@@ -803,45 +825,53 @@ const TournamentSelectionScreen: React.FC = () => {
   return (
     <TouchableWithoutFeedback onPress={() => setShowDropdown(false)}>
       <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Choose a Tournament</Text>
-        </View>
+        <NavigationHeader title="" showStatusBar={false} />
         
-        {renderTimePeriodSelector()}
+        <View style={styles.contentWrapper}>
+          <Text style={styles.pageTitle}>Choose a Tournament</Text>
+          {renderTimePeriodSelector()}
+          
+          {renderDateNavigator()}
+          
+          {renderCategoryDropdown()}
         
-        {renderDateNavigator()}
-        
-        {renderCategoryDropdown()}
+          <View style={styles.listWrapper}>
+            <FlatList
+              data={filteredTournaments}
+              renderItem={renderTournament}
+              keyExtractor={(item) => item.No}
+              style={styles.list}
+              contentContainerStyle={styles.listContainer}
+              showsVerticalScrollIndicator={false}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={onRefresh}
+                  colors={['#FF6B35']}
+                  tintColor="#FF6B35"
+                />
+              }
+            />
+            {tournamentLoading && (
+              <View style={styles.tournamentLoadingOverlay}>
+                <ActivityIndicator size="small" color="#FF6B35" />
+              </View>
+            )}
+          </View>
       
-      <FlatList
-        data={filteredTournaments}
-        renderItem={renderTournament}
-        keyExtractor={(item) => item.No}
-        style={styles.list}
-        contentContainerStyle={styles.listContainer}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={['#FF6B35']}
-            tintColor="#FF6B35"
-          />
-        }
-      />
-      
-      {filteredTournaments.length === 0 && !loading && (
-        <View style={styles.emptyState}>
-          <Clock size={48} color="#9CA3AF" strokeWidth={2} />
-          <Text style={styles.emptyText}>No tournaments found</Text>
-          <Text style={styles.emptySubtext}>
-            {tournaments.length === 0 
-              ? 'No tournaments available for any week'
-              : 'No tournaments for this week and category'
-            }
-          </Text>
+          {filteredTournaments.length === 0 && !initialLoading && !tournamentLoading && (
+            <View style={styles.emptyState}>
+              <Clock size={48} color="#9CA3AF" strokeWidth={2} />
+              <Text style={styles.emptyText}>No tournaments found</Text>
+              <Text style={styles.emptySubtext}>
+                {tournaments.length === 0 
+                  ? 'No tournaments available for any week'
+                  : 'No tournaments for this week and category'
+                }
+              </Text>
+            </View>
+          )}
         </View>
-      )}
       </View>
     </TouchableWithoutFeedback>
   );
@@ -851,6 +881,38 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  contentWrapper: {
+    flex: 1,
+    paddingTop: 16,
+  },
+  listWrapper: {
+    flex: 1,
+    position: 'relative',
+  },
+  tournamentLoadingOverlay: {
+    position: 'absolute',
+    top: 20,
+    right: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 20,
+    padding: 8,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  pageTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#1B365D',
+    textAlign: 'center',
+    marginBottom: 24,
+    paddingHorizontal: 20,
   },
   centerContainer: {
     flex: 1,
@@ -1140,6 +1202,20 @@ const styles = StyleSheet.create({
   todayButtonText: {
     color: '#FFFFFF',
     fontSize: 14,
+    fontWeight: 'bold',
+  },
+  todayButtonInline: {
+    backgroundColor: '#1B365D',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 18,
+    marginLeft: 12,
+    borderWidth: 1,
+    borderColor: '#FFFFFF',
+  },
+  todayButtonInlineText: {
+    color: '#FFFFFF',
+    fontSize: 13,
     fontWeight: 'bold',
   },
   carouselContainer: {

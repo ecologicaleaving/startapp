@@ -46,7 +46,15 @@ const RefereeSettingsScreenContent: React.FC = () => {
   // Parse tournament data from route params
   const tournament: Tournament = React.useMemo(() => {
     try {
-      return JSON.parse(tournamentData || '{}') as Tournament;
+      const parsed = JSON.parse(tournamentData || '{}') as Tournament;
+      const merged = (parsed as any)._mergedTournaments;
+      if (merged && merged.length > 1) {
+        console.log(`🏐 MONITOR: "${parsed.Name}" has ${merged.length} merged tournaments`);
+        console.log(`🏐 MONITOR MERGED:`, merged);
+      } else {
+        console.log(`🏐 MONITOR: "${parsed.Name}" - no merged tournaments found`);
+      }
+      return parsed;
     } catch {
       return {} as Tournament;
     }
@@ -378,8 +386,39 @@ const RefereeSettingsScreenContent: React.FC = () => {
       console.log(`🏐 DEBUG: Loading matches for referee ${referee.Name} in tournament ${selectedTournament}...`);
       console.log('🏐 DEBUG: loadRefereeMatches - currentTournament:', currentTournament?.No, currentTournament?.Name);
 
-      // Get all matches for the tournament (including both male and female if applicable)
-      let allMatches = await VisApiService.getBeachMatchList(selectedTournament);
+      // Check if this tournament has merged tournaments from the tournament detail screen
+      const mergedTournaments = (tournament as any)._mergedTournaments || [];
+      let allMatches: BeachMatch[] = [];
+      
+      if (mergedTournaments.length > 1) {
+        console.log(`🏐 REFEREE MATCHES: Loading from ${mergedTournaments.length} merged tournaments`);
+        
+        // Load matches from all merged tournaments
+        for (const mergedTournament of mergedTournaments) {
+          try {
+            const matches = await VisApiService.getBeachMatchList(mergedTournament.No);
+            const gender = VisApiService.extractGenderFromCode(mergedTournament.Code);
+            
+            // Add metadata to matches
+            const matchesWithMeta = matches.map(match => ({
+              ...match,
+              sourceType: 'merged',
+              sourceTournament: mergedTournament.No,
+              tournamentGender: gender,
+              tournamentCode: mergedTournament.Code,
+              tournamentName: mergedTournament.Name
+            }));
+            
+            allMatches = [...allMatches, ...matchesWithMeta];
+            console.log(`🏐 REFEREE LOADED: ${matches.length} matches (${gender}) from ${mergedTournament.Name}`);
+          } catch (error) {
+            console.warn(`Failed to load referee matches for ${mergedTournament.Name}:`, error);
+          }
+        }
+      } else {
+        // Fallback: Get matches from single tournament (including both male and female if applicable)
+        allMatches = await VisApiService.getBeachMatchList(selectedTournament);
+      }
       console.log(`🏐 DEBUG: Found ${allMatches.length} matches for tournament ${selectedTournament}`);
       
       // Get current tournament data to determine gender
@@ -890,24 +929,91 @@ const RefereeSettingsScreenContent: React.FC = () => {
     
     setLoadingCourtMatches(true);
     try {
-      
       let allTournamentMatches: BeachMatch[] = [];
       
-      // Load matches from current tournament
-      const currentMatches = await VisApiService.getBeachMatchList(selectedTournament);
+      // Check if this tournament has merged tournaments from the tournament detail screen
+      const mergedTournaments = (tournament as any)._mergedTournaments || [];
       const currentTournamentData = currentTournament || await TournamentStorageService.getSelectedTournament();
-      const currentGender = currentTournamentData?.Code ? VisApiService.extractGenderFromCode(currentTournamentData.Code) : 'Unknown';
       
-      // Add metadata to current tournament matches
-      const inferredCountry = inferCountryFromName(currentTournamentData?.Name);
+      console.log(`🏐 MONITOR COURT MATCHES: Loading matches for ${mergedTournaments.length > 0 ? 'merged' : 'single'} tournament`);
       
-      const currentMatchesWithMeta = currentMatches.map(match => ({
-        ...match,
-        tournamentGender: currentGender,
-        tournamentNo: selectedTournament,
-        tournamentCode: currentTournamentData?.Code,
-        tournamentCountry: currentTournamentData?.Country || currentTournamentData?.CountryName || inferredCountry
-      }));
+      if (mergedTournaments.length > 1) {
+        console.log(`🏐 MONITOR COURT LOADING: ${mergedTournaments.length} tournaments from merged data`);
+        
+        // Load matches from all merged tournaments
+        for (const mergedTournament of mergedTournaments) {
+          try {
+            const matches = await VisApiService.getBeachMatchList(mergedTournament.No);
+            const gender = VisApiService.extractGenderFromCode(mergedTournament.Code);
+            const inferredCountry = inferCountryFromName(mergedTournament.Name);
+            
+            // Add metadata to matches
+            const matchesWithMeta = matches.map(match => ({
+              ...match,
+              tournamentGender: gender,
+              tournamentNo: mergedTournament.No,
+              tournamentCode: mergedTournament.Code,
+              tournamentName: mergedTournament.Name,
+              tournamentCountry: currentTournamentData?.Country || currentTournamentData?.CountryName || inferredCountry
+            }));
+            
+            allTournamentMatches = [...allTournamentMatches, ...matchesWithMeta];
+            console.log(`🏐 MONITOR COURT LOADED: ${matches.length} matches (${gender}) from ${mergedTournament.Name}`);
+          } catch (error) {
+            console.warn(`Failed to load court matches for ${mergedTournament.Name}:`, error);
+          }
+        }
+      } else {
+        // Fallback: Load matches from current tournament using old method
+        console.log(`🏐 MONITOR COURT FALLBACK: Using single tournament method`);
+        
+        const currentMatches = await VisApiService.getBeachMatchList(selectedTournament);
+        const currentGender = currentTournamentData?.Code ? VisApiService.extractGenderFromCode(currentTournamentData.Code) : 'Unknown';
+        
+        // Add metadata to current tournament matches
+        const inferredCountry = inferCountryFromName(currentTournamentData?.Name);
+      
+        const currentMatchesWithMeta = currentMatches.map(match => ({
+          ...match,
+          tournamentGender: currentGender,
+          tournamentNo: selectedTournament,
+          tournamentCode: currentTournamentData?.Code,
+          tournamentCountry: currentTournamentData?.Country || currentTournamentData?.CountryName || inferredCountry
+        }));
+        
+        allTournamentMatches = [...currentMatchesWithMeta];
+        
+        // Find related tournaments (men's/women's versions) - fallback method
+        if (currentTournamentData?.Code) {
+          try {
+            const relatedTournaments = await VisApiService.findRelatedTournaments(currentTournamentData);
+            // Load matches from related tournaments (excluding current one)
+            for (const relatedTournament of relatedTournaments) {
+              if (relatedTournament.No !== selectedTournament) {
+                try {
+                  const relatedMatches = await VisApiService.getBeachMatchList(relatedTournament.No);
+                  const relatedGender = VisApiService.extractGenderFromCode(relatedTournament.Code);
+                  
+                  // Add metadata to related tournament matches
+                  const relatedMatchesWithMeta = relatedMatches.map(match => ({
+                    ...match,
+                    tournamentGender: relatedGender,
+                    tournamentNo: relatedTournament.No,
+                    tournamentCode: relatedTournament.Code,
+                    tournamentCountry: relatedTournament.Country || relatedTournament.CountryName || inferCountryFromName(relatedTournament.Name)
+                  }));
+                  
+                  allTournamentMatches = [...allTournamentMatches, ...relatedMatchesWithMeta];
+                } catch (relatedError) {
+                  // Silent error handling
+                }
+              }
+            }
+          } catch (relatedError) {
+            console.warn('Failed to find related tournaments:', relatedError);
+          }
+        }
+      }
       
       // Helper function to infer country from tournament name
       function inferCountryFromName(name?: string): string | undefined {
@@ -927,39 +1033,6 @@ const RefereeSettingsScreenContent: React.FC = () => {
         if (nameLower.includes('brazil') || nameLower.includes('rio') || nameLower.includes('sao paulo')) return 'Brazil';
         
         return undefined;
-      }
-      
-      allTournamentMatches = [...currentMatchesWithMeta];
-      
-      // Find related tournaments (men's/women's versions)
-      if (currentTournamentData?.Code) {
-        try {
-          const relatedTournaments = await VisApiService.findRelatedTournaments(currentTournamentData);
-          // Load matches from related tournaments (excluding current one)
-          for (const relatedTournament of relatedTournaments) {
-            if (relatedTournament.No !== selectedTournament) {
-              try {
-                const relatedMatches = await VisApiService.getBeachMatchList(relatedTournament.No);
-                const relatedGender = VisApiService.extractGenderFromCode(relatedTournament.Code);
-                
-                // Add metadata to related tournament matches
-                const relatedMatchesWithMeta = relatedMatches.map(match => ({
-                  ...match,
-                  tournamentGender: relatedGender,
-                  tournamentNo: relatedTournament.No,
-                  tournamentCode: relatedTournament.Code,
-                  tournamentCountry: relatedTournament.Country || relatedTournament.CountryName || inferCountryFromName(relatedTournament.Name)
-                }));
-                
-                allTournamentMatches = [...allTournamentMatches, ...relatedMatchesWithMeta];
-              } catch (relatedError) {
-                // Silent error handling
-              }
-            }
-          }
-        } catch (relatedError) {
-          console.warn('Failed to find related tournaments:', relatedError);
-        }
       }
       
       // Filter by selected court if not 'All Courts'

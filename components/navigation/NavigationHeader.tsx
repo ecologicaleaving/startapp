@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { GlobalStatusBar } from './GlobalStatusBar';
+import WhistleLogo from '../WhistleLogo';
 
 interface NavigationHeaderProps {
   title: string;
@@ -18,6 +19,7 @@ interface NavigationHeaderProps {
   titleColor?: string;
   showStatusBar?: boolean;
   onStatusPress?: () => void;
+  showLogo?: boolean;
 }
 
 export const NavigationHeader: React.FC<NavigationHeaderProps> = ({
@@ -29,6 +31,7 @@ export const NavigationHeader: React.FC<NavigationHeaderProps> = ({
   titleColor = '#FFFFFF',
   showStatusBar = true,
   onStatusPress,
+  showLogo = true,
 }) => {
   const router = useRouter();
 
@@ -46,6 +49,10 @@ export const NavigationHeader: React.FC<NavigationHeaderProps> = ({
     }
   };
 
+  const handleLogoPress = () => {
+    router.push('/tournament-selection');
+  };
+
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor }]}>
       {/* Global Status Bar Integration */}
@@ -58,6 +65,15 @@ export const NavigationHeader: React.FC<NavigationHeaderProps> = ({
       
       <View style={[styles.container, { backgroundColor }]}>
         <View style={styles.leftSection}>
+          {showLogo && (
+            <TouchableOpacity 
+              onPress={handleLogoPress}
+              activeOpacity={0.8}
+              style={styles.logoButton}
+            >
+              <WhistleLogo size={32} style={styles.logoImage} />
+            </TouchableOpacity>
+          )}
           {showBackButton && (
             <TouchableOpacity
               style={styles.backButton}
@@ -106,6 +122,7 @@ const styles = StyleSheet.create({
   centerSection: {
     flex: 2,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   rightSection: {
     flex: 1,
@@ -122,6 +139,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  logoButton: {
+    padding: 4,
+    borderRadius: 6,
+    marginRight: 12,
+  },
+  logoImage: {
+    borderRadius: 6,
   },
   title: {
     fontSize: 18,
