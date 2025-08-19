@@ -1130,16 +1130,10 @@ export class CacheService {
    */
   private static deduplicateTournaments(tournaments: Tournament[]): Tournament[] {
     console.log(`🏐 deduplicateTournaments: Processing ${tournaments.length} tournaments`);
-    
-    // TEMPORARY: Just return tournaments without merging to test basic functionality
-    if (true) {
-      console.log(`🏐 TEMPORARY: Skipping merging, returning original ${tournaments.length} tournaments`);
-      return tournaments;
-    }
     const tournamentGroups = new Map<string, Tournament[]>();
     
     // Group tournaments by their base characteristics
-    tournaments.forEach((tournament) => {
+    tournaments.forEach((tournament, index) => {
       const name = (tournament.Name || tournament.Title || '').toLowerCase().trim();
       const location = (tournament.Location || tournament.City || tournament.Country || '').toLowerCase().trim();
       const startDate = tournament.StartDate || '';
@@ -1153,6 +1147,11 @@ export class CacheService {
       // Create a key based on cleaned name, location, and start date
       const key = `${cleanName}_${location}_${startDate}`;
       
+      // Debug logging for first few tournaments
+      if (index < 5) {
+        console.log(`🏐 GROUPING [${index}]: "${tournament.Name}" -> clean: "${cleanName}" -> key: "${key}"`);
+      }
+      
       if (!tournamentGroups.has(key)) {
         tournamentGroups.set(key, []);
       }
@@ -1161,8 +1160,18 @@ export class CacheService {
     
     const result: Tournament[] = [];
     
+    console.log(`🏐 GROUPING RESULT: Found ${tournamentGroups.size} unique tournament groups`);
+    
+    // Show some sample groups for debugging
+    let groupIndex = 0;
+    
     // Process each group
     tournamentGroups.forEach((group, key) => {
+      if (groupIndex < 3) {
+        console.log(`🏐 GROUP ${groupIndex}: "${key}" has ${group.length} tournaments: ${group.map(t => t.Name).join(' | ')}`);
+      }
+      groupIndex++;
+      
       if (group.length === 1) {
         // Single tournament - no merging needed
         result.push(group[0]);
@@ -1197,6 +1206,7 @@ export class CacheService {
       }
     });
     
+    console.log(`🏐 FINAL MERGE RESULT: ${tournaments.length} -> ${result.length} tournaments`);
     return result;
   }
   
