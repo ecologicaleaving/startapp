@@ -25,6 +25,7 @@ const TournamentDetailScreenContent: React.FC = () => {
   const [allMatches, setAllMatches] = useState<BeachMatch[]>([]);
   const [showMoreLoading, setShowMoreLoading] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string>('');
+  const [availableDates, setAvailableDates] = useState<string[]>([]);
   const router = useRouter();
   const { tournamentData } = useLocalSearchParams<{ tournamentData: string }>();
 
@@ -191,51 +192,48 @@ const TournamentDetailScreenContent: React.FC = () => {
       
       console.log(`Total matches loaded: ${allTournamentMatches.length}`);
       
-      // Sort matches by tournament phase importance (Finals first, then by date)
-      const sortedMatches = allTournamentMatches.sort((a, b) => {
-        // Define phase importance (higher number = more important)
-        const getPhaseImportance = (round?: string) => {
-          if (!round) return 0;
-          const roundLower = round.toLowerCase();
-          if (roundLower.includes('final') && !roundLower.includes('semi')) return 100; // Final
-          if (roundLower.includes('semi')) return 90; // Semifinal
-          if (roundLower.includes('bronze') || roundLower.includes('3rd')) return 85; // Bronze medal
-          if (roundLower.includes('quarter')) return 80; // Quarterfinal
-          if (roundLower.includes('round of 16') || roundLower.includes('1/8')) return 70;
-          if (roundLower.includes('round of 32') || roundLower.includes('1/16')) return 60;
-          if (roundLower.includes('pool') || roundLower.includes('group')) return 30;
-          if (roundLower.includes('qualification')) return 10;
-          return 50; // Default for unknown rounds
-        };
-        
-        const phaseA = getPhaseImportance(a.Round);
-        const phaseB = getPhaseImportance(b.Round);
-        
-        // If different phases, sort by importance (descending)
-        if (phaseA !== phaseB) {
-          return phaseB - phaseA;
-        }
-        
-        // If same phase, sort by date (most recent first)
-        const dateA = a.LocalDate ? new Date(a.LocalDate).getTime() : 0;
-        const dateB = b.LocalDate ? new Date(b.LocalDate).getTime() : 0;
-        return dateB - dateA;
-      });
+      // Get unique dates and sort them (earliest first)
+      const uniqueDates = [...new Set(allTournamentMatches.map(match => 
+        match.Date || match.LocalDate || match.MatchDate || match.StartDate
+      ).filter(Boolean))].sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
       
-      setAllMatches(sortedMatches);
+      setAvailableDates(uniqueDates);
       
-      // Get unique dates and set first date as selected
-      const uniqueDates = [...new Set(sortedMatches.map(match => match.LocalDate || 'Unknown Date'))];
-      if (uniqueDates.length > 0 && !selectedDate) {
-        setSelectedDate(uniqueDates[0]);
+      // Set default date to last day of tournament if not already set
+      const defaultDate = uniqueDates.length > 0 ? uniqueDates[uniqueDates.length - 1] : '';
+      const effectiveSelectedDate = selectedDate || defaultDate;
+      
+      if (!selectedDate && defaultDate) {
+        setSelectedDate(defaultDate);
       }
       
-      // Filter matches by selected date if we have one
-      const filteredMatches = selectedDate 
-        ? sortedMatches.filter(match => (match.LocalDate || 'Unknown Date') === selectedDate)
-        : sortedMatches;
+      setAllMatches(allTournamentMatches);
       
-      setMatches(filteredMatches.slice(0, 5)); // Show first 5 matches of selected date
+      // Filter and sort matches by selected date
+      const filteredMatches = effectiveSelectedDate 
+        ? allTournamentMatches.filter(match => {
+            const matchDate = match.Date || match.LocalDate || match.MatchDate || match.StartDate;
+            return matchDate === effectiveSelectedDate;
+          })
+        : allTournamentMatches;
+      
+      // Sort matches by time ascending (earliest first)
+      const sortedMatches = [...filteredMatches].sort((a, b) => {
+        const timeA = a.LocalTime || a.Time || '00:00';
+        const timeB = b.LocalTime || b.Time || '00:00';
+        
+        // Convert time strings (HH:MM) to comparable numbers
+        const getTimeNumber = (timeStr: string) => {
+          const parts = timeStr.split(':');
+          const hours = parseInt(parts[0] || '0', 10);
+          const minutes = parseInt(parts[1] || '0', 10);
+          return hours * 60 + minutes; // Total minutes from midnight
+        };
+        
+        return getTimeNumber(timeA) - getTimeNumber(timeB);
+      });
+      
+      setMatches(sortedMatches.slice(0, 5)); // Show first 5 matches of selected date
     } catch (error) {
       console.error('Failed to load matches:', error);
     } finally {
@@ -246,79 +244,252 @@ const TournamentDetailScreenContent: React.FC = () => {
   // Load more matches for selected date
   const loadMoreMatches = async () => {
     const filteredMatches = selectedDate 
-      ? allMatches.filter(match => (match.LocalDate || 'Unknown Date') === selectedDate)
+      ? allMatches.filter(match => {
+          const matchDate = match.Date || match.LocalDate || match.MatchDate || match.StartDate;
+          return matchDate === selectedDate;
+        })
       : allMatches;
       
-    if (matches.length >= filteredMatches.length) return;
+    // Sort by time ascending
+    const sortedMatches = [...filteredMatches].sort((a, b) => {
+      const timeA = a.LocalTime || a.Time || '00:00';
+      const timeB = b.LocalTime || b.Time || '00:00';
+      
+      const getTimeNumber = (timeStr: string) => {
+        const parts = timeStr.split(':');
+        const hours = parseInt(parts[0] || '0', 10);
+        const minutes = parseInt(parts[1] || '0', 10);
+        return hours * 60 + minutes;
+      };
+      
+      return getTimeNumber(timeA) - getTimeNumber(timeB);
+    });
+      
+    if (matches.length >= sortedMatches.length) return;
     
     setShowMoreLoading(true);
     
     // Simulate loading delay for better UX
     setTimeout(() => {
-      const nextBatch = filteredMatches.slice(0, matches.length + 5);
+      const nextBatch = sortedMatches.slice(0, matches.length + 5);
       setMatches(nextBatch);
       setShowMoreLoading(false);
     }, 500);
   };
 
-  // Handle date tab change
-  const handleDateChange = (date: string) => {
-    setSelectedDate(date);
-    const filteredMatches = allMatches.filter(match => (match.LocalDate || 'Unknown Date') === date);
-    setMatches(filteredMatches.slice(0, 5)); // Reset to first 5 matches of new date
+  // Handle date navigation
+  const navigateToDate = (direction: 'prev' | 'next') => {
+    const currentIndex = availableDates.indexOf(selectedDate);
+    let newIndex = currentIndex;
+    
+    if (direction === 'prev' && currentIndex > 0) {
+      newIndex = currentIndex - 1;
+    } else if (direction === 'next' && currentIndex < availableDates.length - 1) {
+      newIndex = currentIndex + 1;
+    }
+    
+    if (newIndex !== currentIndex && newIndex >= 0 && newIndex < availableDates.length) {
+      const newDate = availableDates[newIndex];
+      setSelectedDate(newDate);
+      
+      // Filter and sort matches for new date
+      const filteredMatches = allMatches.filter(match => {
+        const matchDate = match.Date || match.LocalDate || match.MatchDate || match.StartDate;
+        return matchDate === newDate;
+      });
+      
+      const sortedMatches = [...filteredMatches].sort((a, b) => {
+        const timeA = a.LocalTime || a.Time || '00:00';
+        const timeB = b.LocalTime || b.Time || '00:00';
+        
+        const getTimeNumber = (timeStr: string) => {
+          const parts = timeStr.split(':');
+          const hours = parseInt(parts[0] || '0', 10);
+          const minutes = parseInt(parts[1] || '0', 10);
+          return hours * 60 + minutes;
+        };
+        
+        return getTimeNumber(timeA) - getTimeNumber(timeB);
+      });
+      
+      setMatches(sortedMatches.slice(0, 5));
+    }
   };
 
-  // Get unique dates for tabs
-  const getUniqueDates = () => {
-    return [...new Set(allMatches.map(match => match.LocalDate || 'Unknown Date'))];
-  };
-
-  // Format date as weekday and day number
-  const formatDateWithoutYear = (dateStr: string) => {
-    if (dateStr === 'Unknown Date') return dateStr;
+  // Format match date for display
+  const formatMatchDate = (dateStr: string) => {
+    if (!dateStr || dateStr === 'Unknown Date') return dateStr;
     try {
       const date = new Date(dateStr);
       return date.toLocaleDateString('en-US', {
         weekday: 'short',
-        day: 'numeric'
+        month: 'short',
+        day: 'numeric',
       });
     } catch {
       return dateStr;
     }
   };
 
-  // Render date tabs
-  const renderDateTabs = () => {
-    const dates = getUniqueDates();
+  // Render date navigator with left/right arrows (same as monitor screens)
+  const renderDateNavigator = () => {
+    const currentIndex = availableDates.indexOf(selectedDate);
+    const currentDate = selectedDate || (availableDates.length > 0 ? availableDates[0] : '');
     
-    // Debug: log available dates
-    console.log('Available dates for tabs:', dates);
+    if (availableDates.length <= 1) return null; // Don't show navigator for single date
+    
+    // Check if we're at the boundaries
+    const isAtFirst = currentIndex <= 0;
+    const isAtLast = currentIndex >= availableDates.length - 1;
+    
+    // Get match count for current date
+    const matchCount = allMatches.filter(match => {
+      const matchDate = match.Date || match.LocalDate || match.MatchDate || match.StartDate;
+      return matchDate === currentDate;
+    }).length;
+    
+    const displayDate = currentDate ? formatMatchDate(currentDate) : 'All Days';
+    const isToday = currentDate && new Date(currentDate).toDateString() === new Date().toDateString();
+    const dateInfo = isToday ? '📅 Today' : displayDate;
     
     return (
-      <View style={styles.dateTabsContainer}>
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.dateTabsContent}
+      <View style={styles.dateNavigator}>
+        <TouchableOpacity 
+          style={[
+            styles.dateNavButton,
+            isAtFirst && styles.dateNavButtonDisabled
+          ]}
+          onPress={() => !isAtFirst && navigateToDate('prev')}
+          disabled={isAtFirst}
         >
-          {dates.map((date) => (
-            <TouchableOpacity
-              key={date}
-              style={[
-                styles.dateTab,
-                selectedDate === date && styles.activeDateTab
-              ]}
-              onPress={() => handleDateChange(date)}
-            >
-              <Text style={[
-                styles.dateTabText,
-                selectedDate === date && styles.activeDateTabText
-              ]}>
-                {formatDateWithoutYear(date)}
+          <Text style={[
+            styles.dateNavButtonText,
+            isAtFirst && styles.dateNavButtonTextDisabled
+          ]}>◀</Text>
+        </TouchableOpacity>
+        
+        <View style={styles.dateDisplayContainer}>
+          <Text style={styles.dateDisplayText}>{dateInfo}</Text>
+          <Text style={styles.datePositionText}>
+            {matchCount} matches • {currentIndex + 1} of {availableDates.length}
+          </Text>
+        </View>
+        
+        <TouchableOpacity 
+          style={[
+            styles.dateNavButton,
+            isAtLast && styles.dateNavButtonDisabled
+          ]}
+          onPress={() => !isAtLast && navigateToDate('next')}
+          disabled={isAtLast}
+        >
+          <Text style={[
+            styles.dateNavButtonText,
+            isAtLast && styles.dateNavButtonTextDisabled
+          ]}>▶</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  // Render match card (same style as monitor screens)
+  const renderMatchCard = (match: BeachMatch, index: number) => {
+    const teamAScore = parseInt(match.MatchPointsA || '0');
+    const teamBScore = parseInt(match.MatchPointsB || '0');
+    const teamAWon = teamAScore > teamBScore && teamAScore > 0;
+    const teamBWon = teamBScore > teamAScore && teamBScore > 0;
+
+    return (
+      <View key={match.No || index} style={styles.matchCard}>
+        {/* Gender Strip */}
+        {match.tournamentGender && (
+          <View style={[
+            styles.genderStrip,
+            match.tournamentGender === 'M' ? styles.menStrip : styles.womenStrip
+          ]} />
+        )}
+        
+        {/* Top Info */}
+        <View style={styles.matchTopInfo}>
+          <View style={styles.leftTopInfo}>
+            {match.Court && (
+              <Text style={styles.courtInfoTop}>
+                Court {match.Court}
               </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+            )}
+            {match.LocalTime && (
+              <Text style={styles.timeInfoTop}>
+                {match.LocalTime.substring(0, 5)}
+              </Text>
+            )}
+          </View>
+          <Text style={styles.roundInfoTop}>
+            {match.Round || 'Match'}
+          </Text>
+        </View>
+        
+        {/* Teams Section */}
+        <View style={styles.matchHeader}>
+          <View style={styles.teamsColumn}>
+            <Text 
+              style={[
+                styles.teamName, 
+                teamAWon && styles.winnerTeamName
+              ]} 
+              numberOfLines={2}
+            >
+              {match.TeamAName || 'Team A'}
+            </Text>
+            <Text 
+              style={[
+                styles.teamName, 
+                teamBWon && styles.winnerTeamName
+              ]} 
+              numberOfLines={2}
+            >
+              {match.TeamBName || 'Team B'}
+            </Text>
+          </View>
+          
+          <View style={styles.scoreColumn}>
+            <View style={styles.matchScore}>
+              <Text 
+                style={[
+                  styles.scoreText,
+                  teamAWon && styles.winnerScoreText
+                ]}
+              >
+                {match.MatchPointsA || '0'}
+              </Text>
+              <Text 
+                style={[
+                  styles.scoreText,
+                  teamBWon && styles.winnerScoreText
+                ]}
+              >
+                {match.MatchPointsB || '0'}
+              </Text>
+            </View>
+          </View>
+        </View>
+        
+        {/* Referees Section */}
+        {(match.Referee1Name || match.Referee2Name) && (
+          <View style={styles.refereesSection}>
+            {match.Referee1Name && (
+              <Text style={styles.refereeText}>
+                1° {match.Referee1Name}
+                {match.Referee1FederationCode && ` (${match.Referee1FederationCode})`}
+              </Text>
+            )}
+            {match.Referee2Name && (
+              <Text style={styles.refereeText}>
+                2° {match.Referee2Name}
+                {match.Referee2FederationCode && ` (${match.Referee2FederationCode})`}
+              </Text>
+            )}
+          </View>
+        )}
       </View>
     );
   };
@@ -348,37 +519,18 @@ const TournamentDetailScreenContent: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      {/* Navigation Header with Status Integration */}
+      {/* Navigation Header without Status Bar */}
       <NavigationHeader
         title="Tournament Details"
         showBackButton={true}
-        showStatusBar={true}
-        onStatusPress={handleStatusPress}
+        showStatusBar={false}
         rightComponent={
-          <View style={styles.headerActions}>
-            {/* Status Badge Indicators */}
-            {statusCounts.current > 0 && (
-              <View style={[styles.statusBadge, { backgroundColor: designTokens.colors.success }]}>
-                <Text style={styles.statusBadgeText}>{statusCounts.current}</Text>
-              </View>
-            )}
-            {statusCounts.upcoming > 0 && (
-              <View style={[styles.statusBadge, { backgroundColor: designTokens.colors.secondary }]}>
-                <Text style={styles.statusBadgeText}>{statusCounts.upcoming}</Text>
-              </View>
-            )}
-            
-            {/* Network Status Indicator */}
-            {(!isOnline || syncStatus !== 'synced') && (
-              <View style={[styles.networkStatus, { 
-                backgroundColor: !isOnline ? designTokens.colors.error : designTokens.colors.warning 
-              }]}>
-                <Text style={styles.networkStatusText}>
-                  {!isOnline ? '📴' : '🔄'}
-                </Text>
-              </View>
-            )}
-          </View>
+          <TouchableOpacity 
+            style={styles.tournamentSelectButton}
+            onPress={() => router.push('/')}
+          >
+            <Text style={styles.tournamentSelectButtonText}>📋</Text>
+          </TouchableOpacity>
         }
       />
 
@@ -421,141 +573,20 @@ const TournamentDetailScreenContent: React.FC = () => {
               </View>
             ) : matches.length > 0 ? (
               <>
-                {/* Debug: Always show date tabs for testing */}
-                <View style={styles.dateTabsContainer}>
-                  <Text style={styles.debugText}>
-                    Dates found: {getUniqueDates().length} | Selected: {selectedDate || 'none'}
-                  </Text>
-                  <ScrollView 
-                    horizontal 
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.dateTabsContent}
-                  >
-                    {getUniqueDates().map((date) => (
-                      <TouchableOpacity
-                        key={date}
-                        style={[
-                          styles.dateTab,
-                          selectedDate === date && styles.activeDateTab
-                        ]}
-                        onPress={() => handleDateChange(date)}
-                      >
-                        <Text style={[
-                          styles.dateTabText,
-                          selectedDate === date && styles.activeDateTabText
-                        ]}>
-                          {formatDateWithoutYear(date)}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
+                {/* Date Navigator (same as monitor screens) */}
+                {renderDateNavigator()}
                 
                 <View style={styles.matchesList}>
-                  {matches.map((match, index) => {
-                    const scoreA = parseInt(match.MatchPointsA || '0');
-                    const scoreB = parseInt(match.MatchPointsB || '0');
-                    const teamAWon = scoreA > scoreB;
-                    const teamBWon = scoreB > scoreA;
-                    
-                    // Debug: Show detailed match data from VIS API
-                    if (index === 0) {
-                      console.log('🏐 COMPLETE MATCH DATA FROM VIS API:', {
-                        'Match Number': match.No,
-                        'Tournament Match #': match.NoInTournament,
-                        'Date': match.LocalDate,
-                        'Time': match.LocalTime,
-                        'Court': match.Court,
-                        'Round/Phase': match.Round,
-                        'Status': match.Status,
-                        'Team A': match.TeamAName,
-                        'Team B': match.TeamBName,
-                        'Match Score': `${match.MatchPointsA}-${match.MatchPointsB}`,
-                        'Set 1': `${match.PointsTeamASet1}-${match.PointsTeamBSet1}`,
-                        'Set 2': `${match.PointsTeamASet2}-${match.PointsTeamBSet2}`,
-                        'Set 3': `${match.PointsTeamASet3}-${match.PointsTeamBSet3}`,
-                        'Set Durations': `${match.DurationSet1}|${match.DurationSet2}|${match.DurationSet3}`,
-                        'Referee 1': `${match.Referee1Name} (${match.Referee1FederationCode})`,
-                        'Referee 2': `${match.Referee2Name} (${match.Referee2FederationCode})`,
-                        'Tournament Info': `${match.tournamentCode} (${match.tournamentGender})`,
-                        'Version': match.Version
-                      });
-                    }
-                    
-                    return (
-                      <View key={match.No || index} style={styles.matchCard}>
-                            {/* Gender Strip */}
-                            {match.tournamentGender && (
-                              <View style={[
-                                styles.genderStrip,
-                                match.tournamentGender === 'M' ? styles.menStrip : styles.womenStrip
-                              ]} />
-                            )}
-                            
-                            <View style={styles.matchTopInfo}>
-                              <View style={styles.leftTopInfo}>
-                                {match.Court && (
-                                  <Text style={styles.courtInfoTop}>
-                                    Court {match.Court}
-                                  </Text>
-                                )}
-                              </View>
-                              <Text style={styles.roundInfoTop}>
-                                {match.Round || 'Match'}
-                              </Text>
-                            </View>
-                            <View style={styles.matchHeader}>
-                              <View style={styles.teamsColumn}>
-                                <Text 
-                                  style={[
-                                    styles.teamName, 
-                                    teamAWon && styles.winnerTeamName
-                                  ]} 
-                                  numberOfLines={2}
-                                >
-                                  {match.TeamAName || 'Team A'}
-                                </Text>
-                                <Text 
-                                  style={[
-                                    styles.teamName, 
-                                    teamBWon && styles.winnerTeamName
-                                  ]} 
-                                  numberOfLines={2}
-                                >
-                                  {match.TeamBName || 'Team B'}
-                                </Text>
-                              </View>
-                              
-                              <View style={styles.scoreColumn}>
-                                <View style={styles.matchScore}>
-                                  <Text 
-                                    style={[
-                                      styles.scoreText,
-                                      teamAWon && styles.winnerScoreText
-                                    ]}
-                                  >
-                                    {match.MatchPointsA || '0'}
-                                  </Text>
-                                  <Text 
-                                    style={[
-                                      styles.scoreText,
-                                      teamBWon && styles.winnerScoreText
-                                    ]}
-                                  >
-                                    {match.MatchPointsB || '0'}
-                                  </Text>
-                                </View>
-                              </View>
-                            </View>
-                        </View>
-                      );
-                    })}
+                  {matches.map((match, index) => renderMatchCard(match, index))}
                 </View>
                 
                 {/* Load More Button */}
                 {(() => {
                   const filteredMatches = selectedDate 
-                    ? allMatches.filter(match => (match.LocalDate || 'Unknown Date') === selectedDate)
+                    ? allMatches.filter(match => {
+                        const matchDate = match.Date || match.LocalDate || match.MatchDate || match.StartDate;
+                        return matchDate === selectedDate;
+                      })
                     : allMatches;
                   return matches.length < filteredMatches.length;
                 })() && (
@@ -573,7 +604,10 @@ const TournamentDetailScreenContent: React.FC = () => {
                       <Text style={styles.loadMoreButtonText}>
                         Load More ({(() => {
                           const filteredMatches = selectedDate 
-                            ? allMatches.filter(match => (match.LocalDate || 'Unknown Date') === selectedDate)
+                            ? allMatches.filter(match => {
+                                const matchDate = match.Date || match.LocalDate || match.MatchDate || match.StartDate;
+                                return matchDate === selectedDate;
+                              })
                             : allMatches;
                           return filteredMatches.length - matches.length;
                         })()} remaining)
@@ -590,7 +624,20 @@ const TournamentDetailScreenContent: React.FC = () => {
 
       </ScrollView>
 
-      <BottomTabNavigation currentTab="details" />
+      <BottomTabNavigation 
+        currentTab="details" 
+        onTabPress={(tab) => {
+          if (tab === 'details' && tournament) {
+            // Already on details page, do nothing
+            return;
+          } else if (tab === 'monitor' && tournament) {
+            router.push({
+              pathname: '/referee-settings',
+              params: { tournamentData: JSON.stringify(tournament) }
+            });
+          }
+        }}
+      />
     </View>
   );
 };
@@ -738,6 +785,28 @@ const styles = StyleSheet.create({
   
   networkStatusText: {
     fontSize: 12,
+  },
+  
+  tournamentSelectButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#1B365D',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#1B365D',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  
+  tournamentSelectButtonText: {
+    fontSize: 18,
+    color: '#FFFFFF',
   },
   
   // Match Results Styles
@@ -929,52 +998,87 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  // Date Tabs Styles (Carousel)
-  dateTabsContainer: {
-    marginBottom: 16,
-  },
-  dateTabsContent: {
-    paddingLeft: 20,
-    paddingRight: 20,
-  },
-  dateTab: {
+  // Date Navigator Styles (same as monitor screens)
+  dateNavigator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 25,
-    borderWidth: 2,
-    borderColor: '#1B365D',
-    backgroundColor: 'transparent',
-    minHeight: 44,
-    minWidth: 100,
+    paddingVertical: 16,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  dateNavButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#1B365D',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
     shadowColor: '#1B365D',
     shadowOffset: {
       width: 0,
       height: 2,
     },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.2,
     shadowRadius: 4,
-    elevation: 2,
+    elevation: 3,
   },
-  activeDateTab: {
-    backgroundColor: '#1B365D',
+  dateNavButtonDisabled: {
+    backgroundColor: '#E5E7EB',
+    shadowOpacity: 0,
+    elevation: 0,
   },
-  dateTabText: {
-    color: '#1B365D',
-    fontWeight: 'bold',
-    fontSize: 14,
-    textAlign: 'center',
-  },
-  activeDateTabText: {
+  dateNavButtonText: {
     color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
-  debugText: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 8,
+  dateNavButtonTextDisabled: {
+    color: '#9CA3AF',
+  },
+  dateDisplayContainer: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  dateDisplayText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1B365D',
     textAlign: 'center',
+    marginBottom: 2,
+  },
+  datePositionText: {
+    fontSize: 12,
+    color: '#6B7280',
+    textAlign: 'center',
+  },
+  // Additional styles for match cards (same as monitor screens)
+  leftTopInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  timeInfoTop: {
+    fontSize: 11,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  refereesSection: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  refereeText: {
+    fontSize: 12,
+    color: '#4B5563',
+    fontWeight: '500',
+    marginBottom: 2,
   },
 });
 
