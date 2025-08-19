@@ -97,7 +97,8 @@
       "WebFetch(domain:sslsites.de)",
       "Bash(rg:*)",
       "Bash(touch:*)",
-      "Bash(npm uninstall:*)"
+      "Bash(npm uninstall:*)",
+      "WebFetch(domain:localhost)"
     ],
     "deny": []
   }

@@ -68,35 +68,38 @@ export default function Index() {
             },
           ]}
         >
-          {/* App Name - Moved higher */}
-          <Text style={styles.appName}>BeachRef</Text>
-          <Text style={styles.appTagline}>Referee Assignment and Match Result Monitor</Text>
+          {/* Top Section */}
+          <View style={styles.topSection}>
+            {/* App Name - Moved higher */}
+            <Text style={styles.appName}>BeachRef</Text>
+            <Text style={styles.appTagline}>Referee Assignment and Match Result Monitor</Text>
 
-          {/* Feature Icons */}
-          <View style={styles.featuresContainer}>
-            <View style={styles.featureItem}>
-              <Radio 
-                size={28} 
-                color="#B8D4E3" 
-                strokeWidth={2}
-              />
-              <Text style={styles.featureText}>Live Score</Text>
-            </View>
-            <View style={styles.featureItem}>
-              <Award 
-                size={28} 
-                color="#B8D4E3" 
-                strokeWidth={2}
-              />
-              <Text style={styles.featureText}>Results</Text>
-            </View>
-            <View style={styles.featureItem}>
-              <Calendar 
-                size={28} 
-                color="#B8D4E3" 
-                strokeWidth={2}
-              />
-              <Text style={styles.featureText}>Assignments</Text>
+            {/* Feature Icons */}
+            <View style={styles.featuresContainer}>
+              <View style={styles.featureItem}>
+                <Radio 
+                  size={48} 
+                  color="#B8D4E3" 
+                  strokeWidth={2}
+                />
+                <Text style={styles.featureText}>Live Score</Text>
+              </View>
+              <View style={styles.featureItem}>
+                <Award 
+                  size={48} 
+                  color="#B8D4E3" 
+                  strokeWidth={2}
+                />
+                <Text style={styles.featureText}>Results</Text>
+              </View>
+              <View style={styles.featureItem}>
+                <Calendar 
+                  size={48} 
+                  color="#B8D4E3" 
+                  strokeWidth={2}
+                />
+                <Text style={styles.featureText}>Assignments</Text>
+              </View>
             </View>
           </View>
 
@@ -172,12 +175,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 40,
     marginTop: -80, // Alza tutto il contenuto
+    justifyContent: 'space-between',
+    flex: 0.7,
   },
   appName: {
     fontSize: 48,
     fontWeight: 'bold',
     color: '#FFFFFF',
-    marginBottom: 8,
+    marginBottom: 4,
     textAlign: 'center',
     letterSpacing: 2,
   },
@@ -188,25 +193,33 @@ const styles = StyleSheet.create({
     marginBottom: 40,
     fontWeight: '500',
   },
+  topSection: {
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'center',
+  },
   featuresContainer: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     width: '100%',
-    marginBottom: 50,
+    marginTop: 40,
     paddingHorizontal: 20,
   },
   featureItem: {
     alignItems: 'center',
     opacity: 0.9,
+    minHeight: 80,
+    justifyContent: 'center',
   },
   featureIcon: {
     marginBottom: 8,
   },
   featureText: {
     color: '#B8D4E3',
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '600',
     textAlign: 'center',
+    marginTop: 8,
   },
   startButton: {
     backgroundColor: '#FF6B35',
@@ -216,7 +229,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 30,
     shadowColor: '#FF6B35',
     shadowOffset: {
       width: 0,

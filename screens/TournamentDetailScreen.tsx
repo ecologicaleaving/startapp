@@ -527,7 +527,7 @@ const TournamentDetailScreenContent: React.FC = () => {
         rightComponent={
           <TouchableOpacity 
             style={styles.tournamentSelectButton}
-            onPress={() => router.push('/')}
+            onPress={() => router.push('/tournament-selection')}
           >
             <Text style={styles.tournamentSelectButtonText}>📋</Text>
           </TouchableOpacity>

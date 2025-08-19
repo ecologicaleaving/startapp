@@ -12,6 +12,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Clock } from 'lucide-react';
 import { Tournament } from '../types/tournament';
 import { VisApiService, TournamentType } from '../services/visApi';
 
@@ -182,29 +183,118 @@ const LiveTournamentCard: React.FC<LiveTournamentCardProps> = ({ tournament, onP
   );
 };
 
+interface WeekTournamentCardProps {
+  tournament: Tournament;
+  onPress: () => void;
+}
+
+const WeekTournamentCard: React.FC<WeekTournamentCardProps> = ({ tournament, onPress }) => {
+  const getLocation = () => {
+    const city = tournament.City;
+    const country = tournament.CountryName || tournament.Country;
+    
+    if (city && country) {
+      return `${city}, ${country}`;
+    }
+    
+    return tournament.Location || city || country;
+  };
+
+  const getStatus = () => {
+    if (!tournament.StartDate || !tournament.EndDate) return null;
+    
+    const now = new Date();
+    const start = new Date(tournament.StartDate);
+    const end = new Date(tournament.EndDate);
+    
+    if (start <= now && now <= end) {
+      return { text: '🔴 LIVE', color: '#2E8B57' };
+    } else if (start > now) {
+      return { text: '📅 UPCOMING', color: '#4A90A4' };
+    } else {
+      return { text: '✅ COMPLETED', color: '#6B7280' };
+    }
+  };
+
+  const status = getStatus();
+
+  return (
+    <TouchableOpacity 
+      style={styles.liveCard} 
+      onPress={onPress}
+      activeOpacity={0.8}
+    >
+      <View style={styles.liveCardHeader}>
+        {status && (
+          <View style={[styles.liveBadge, { backgroundColor: status.color }]}>
+            <Text style={styles.liveBadgeText}>{status.text}</Text>
+          </View>
+        )}
+      </View>
+      
+      <Text style={styles.liveTournamentName} numberOfLines={2}>
+        {tournament.Title || tournament.Name || `Tournament ${tournament.No}`}
+      </Text>
+      
+      {getLocation() && (
+        <Text style={styles.liveTournamentLocation} numberOfLines={1}>
+          📍 {getLocation()}
+        </Text>
+      )}
+    </TouchableOpacity>
+  );
+};
+
 const TournamentSelectionScreen: React.FC = () => {
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<TournamentType>('BPT');
+  const [currentWeekStart, setCurrentWeekStart] = useState<Date>(getWeekStart(new Date()));
   const router = useRouter();
+
+  // Helper function to get Monday of current week
+  function getWeekStart(date: Date): Date {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
+    return new Date(d.setDate(diff));
+  }
+
+  // Helper function to format week range
+  function formatWeekRange(weekStart: Date): string {
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+    
+    const startMonth = weekStart.toLocaleDateString('en-US', { month: 'short' });
+    const endMonth = weekEnd.toLocaleDateString('en-US', { month: 'short' });
+    const startDay = weekStart.getDate();
+    const endDay = weekEnd.getDate();
+    
+    if (startMonth === endMonth) {
+      return `${startMonth} ${startDay}-${endDay}`;
+    } else {
+      return `${startMonth} ${startDay} - ${endMonth} ${endDay}`;
+    }
+  }
 
   const loadTournaments = useCallback(async (forceRefresh = false) => {
     try {
       setLoading(true);
       setError(null);
       
-      console.log(`Loading tournaments for ${selectedType}, force refresh: ${forceRefresh}`);
+      console.log(`Loading tournaments, force refresh: ${forceRefresh}`);
       
-      // Force fresh data by bypassing cache system
+      // Force fresh data by bypassing cache system - load ALL tournaments
       const tournamentList = await VisApiService.fetchDirectFromAPI({ 
-        recentOnly: true,  // Show this month's tournaments instead of only currently active
-        tournamentType: selectedType,
+        recentOnly: false,  // Get all tournaments, not just recent
+        tournamentType: undefined,  // Get all types, filter client-side
         year: 2025  // Only this year's tournaments
       });
       
-      console.log(`Loaded ${tournamentList.length} tournaments for type: ${selectedType}`);
+      console.log(`Loaded ${tournamentList.length} total tournaments`);
+      console.log('Tournament sample:', tournamentList.slice(0, 2));
       setTournaments(tournamentList);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
@@ -212,11 +302,17 @@ const TournamentSelectionScreen: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [selectedType]);
+  }, []);  // Remove selectedType dependency
 
   useEffect(() => {
     loadTournaments();
   }, [loadTournaments]);
+
+  // Separate effect for category changes - only update filtered results, don't reload API
+  useEffect(() => {
+    // This will automatically trigger re-filtering when selectedType changes
+    // No need to reload tournaments from API
+  }, [selectedType]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -234,16 +330,57 @@ const TournamentSelectionScreen: React.FC = () => {
     });
   };
 
-  // Filter live tournaments
-  const liveTournaments = tournaments.filter(tournament => {
-    if (!tournament.StartDate || !tournament.EndDate) return false;
+  // Filter tournaments for current week and selected type
+  const filteredTournaments = tournaments.filter(tournament => {
+    if (!tournament.StartDate) return false;
     
-    const now = new Date();
-    const start = new Date(tournament.StartDate);
-    const end = new Date(tournament.EndDate);
+    // Exclude cancelled tournaments
+    if (tournament.Status && tournament.Status.toLowerCase().includes('cancelled')) {
+      return false;
+    }
     
-    return start <= now && now <= end;
+    // Week filtering
+    const tournamentStart = new Date(tournament.StartDate);
+    const tournamentEnd = tournament.EndDate ? new Date(tournament.EndDate) : tournamentStart;
+    const weekStart = new Date(currentWeekStart);
+    const weekEnd = new Date(currentWeekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+    
+    const weekOverlap = tournamentStart <= weekEnd && tournamentEnd >= weekStart;
+    
+    // Type filtering
+    if (selectedType === 'ALL') {
+      return weekOverlap;
+    }
+    
+    // Tournament type filtering - more flexible matching
+    if (selectedType === 'BPT') {
+      // Match BPT tournaments
+      const name = (tournament.Name || tournament.Title || '').toLowerCase();
+      const type = (tournament.Type || tournament.Category || '').toLowerCase();
+      return weekOverlap && (name.includes('bpt') || type.includes('bpt') || name.includes('beach') || name.includes('pro tour'));
+    } else if (selectedType === 'CEV') {
+      // Match CEV tournaments
+      const name = (tournament.Name || tournament.Title || '').toLowerCase();
+      const type = (tournament.Type || tournament.Category || '').toLowerCase();
+      return weekOverlap && (name.includes('cev') || type.includes('cev') || name.includes('european'));
+    }
+    
+    return weekOverlap;
   });
+
+  // Navigate to previous/next week
+  const navigateWeek = (direction: 'prev' | 'next') => {
+    const newWeekStart = new Date(currentWeekStart);
+    const daysToMove = direction === 'next' ? 7 : -7;
+    newWeekStart.setDate(currentWeekStart.getDate() + daysToMove);
+    setCurrentWeekStart(newWeekStart);
+  };
+
+  // Navigate to current week (today)
+  const goToCurrentWeek = () => {
+    setCurrentWeekStart(getWeekStart(new Date()));
+  };
 
   const renderTournament = ({ item }: { item: Tournament }) => (
     <TournamentCard 
@@ -278,38 +415,42 @@ const TournamentSelectionScreen: React.FC = () => {
     );
   };
 
-  const renderLiveTournamentsCarousel = () => {
+  const renderWeekNavigator = () => {
+    const isCurrentWeek = getWeekStart(new Date()).getTime() === currentWeekStart.getTime();
+    const weekInfo = isCurrentWeek ? '📅 This Week' : formatWeekRange(currentWeekStart);
+    
     return (
-      <View style={styles.carouselSection}>
-        <View style={styles.carouselHeader}>
-          <Text style={styles.carouselTitle}>🔴 Playing Now</Text>
+      <View style={styles.weekNavigatorContainer}>
+        <View style={styles.weekNavigator}>
+          <TouchableOpacity 
+            style={styles.weekNavButton}
+            onPress={() => navigateWeek('prev')}
+          >
+            <Text style={styles.weekNavButtonText}>◀</Text>
+          </TouchableOpacity>
+          
+          <View style={styles.weekDisplayContainer}>
+            <Text style={styles.weekDisplayText}>{weekInfo}</Text>
+            <Text style={styles.weekTournamentCount}>
+              {filteredTournaments.length} tournaments • {selectedType}
+            </Text>
+          </View>
+          
+          <TouchableOpacity 
+            style={styles.weekNavButton}
+            onPress={() => navigateWeek('next')}
+          >
+            <Text style={styles.weekNavButtonText}>▶</Text>
+          </TouchableOpacity>
         </View>
         
-        {liveTournaments.length > 0 ? (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            decelerationRate="fast"
-            snapToInterval={CAROUSEL_CARD_WIDTH + CAROUSEL_CARD_MARGIN * 2}
-            contentContainerStyle={styles.carouselContainer}
+        {!isCurrentWeek && (
+          <TouchableOpacity 
+            style={styles.todayButton}
+            onPress={goToCurrentWeek}
           >
-            {liveTournaments.map((tournament, index) => (
-              <View key={tournament.No} style={styles.carouselCardWrapper}>
-                <LiveTournamentCard
-                  tournament={tournament}
-                  onPress={() => handleTournamentPress(tournament)}
-                />
-              </View>
-            ))}
-          </ScrollView>
-        ) : (
-          <View style={styles.emptyCarouselContainer}>
-            <View style={styles.emptyCarouselCard}>
-              <Text style={styles.emptyCarouselIcon}>⏰</Text>
-              <Text style={styles.emptyCarouselText}>No tournaments at the moment</Text>
-              <Text style={styles.emptyCarouselSubtext}>Live tournaments will appear here</Text>
-            </View>
-          </View>
+            <Text style={styles.todayButtonText}>Today</Text>
+          </TouchableOpacity>
         )}
       </View>
     );
@@ -342,12 +483,12 @@ const TournamentSelectionScreen: React.FC = () => {
         <Text style={styles.title}>Choose a Tournament</Text>
       </View>
       
-      {renderLiveTournamentsCarousel()}
+      {renderWeekNavigator()}
       
       {renderFilterTabs()}
       
       <FlatList
-        data={tournaments}
+        data={filteredTournaments}
         renderItem={renderTournament}
         keyExtractor={(item) => item.No}
         style={styles.list}
@@ -363,10 +504,16 @@ const TournamentSelectionScreen: React.FC = () => {
         }
       />
       
-      {tournaments.length === 0 && (
+      {filteredTournaments.length === 0 && !loading && (
         <View style={styles.emptyState}>
-          <Text style={styles.emptyText}>No active tournaments found</Text>
-          <Text style={styles.emptySubtext}>Check back later for new tournaments</Text>
+          <Clock size={48} color="#9CA3AF" strokeWidth={2} />
+          <Text style={styles.emptyText}>No tournaments found</Text>
+          <Text style={styles.emptySubtext}>
+            {tournaments.length === 0 
+              ? 'No tournaments available for any week'
+              : 'No tournaments for this week and category'
+            }
+          </Text>
         </View>
       )}
     </View>
@@ -538,24 +685,62 @@ const styles = StyleSheet.create({
     color: '#4A90A4',
     textAlign: 'center',
   },
-  // Live Tournaments Carousel Styles
+  // Week Tournament Carousel Styles
   carouselSection: {
     marginBottom: 24,
   },
-  carouselHeader: {
+  weekNavigatorContainer: {
     paddingHorizontal: 24,
-    marginBottom: 16,
+    marginBottom: 24,
   },
-  carouselTitle: {
-    fontSize: 20,
+  weekNavigator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  weekNavButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  weekNavButtonText: {
+    fontSize: 16,
+    color: '#4A90A4',
+    fontWeight: 'bold',
+  },
+  weekDisplayContainer: {
+    alignItems: 'center',
+    flex: 1,
+    marginHorizontal: 16,
+  },
+  weekDisplayText: {
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#1B365D',
-    marginBottom: 4,
+    marginBottom: 2,
   },
-  carouselSubtitle: {
+  weekTournamentCount: {
     fontSize: 14,
     color: '#4A90A4',
     fontWeight: '500',
+  },
+  todayButton: {
+    backgroundColor: '#FF6B35',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    alignSelf: 'center',
+  },
+  todayButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
   },
   carouselContainer: {
     paddingLeft: 24,
@@ -620,36 +805,20 @@ const styles = StyleSheet.create({
     color: '#4A90A4',
     marginBottom: 4,
   },
-  // Empty Carousel State Styles
-  emptyCarouselContainer: {
-    paddingHorizontal: 24,
-  },
-  emptyCarouselCard: {
-    backgroundColor: '#F8F9FA',
-    padding: 20,
-    borderRadius: 12,
+  // Empty Badge Styles
+  emptyBadge: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 110,
-    borderWidth: 2,
-    borderColor: '#E5E7EB',
-    borderStyle: 'dashed',
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
   },
-  emptyCarouselIcon: {
-    fontSize: 32,
-    marginBottom: 12,
-  },
-  emptyCarouselText: {
-    fontSize: 16,
-    fontWeight: '600',
+  emptyBadgeText: {
     color: '#6B7280',
-    textAlign: 'center',
-    marginBottom: 4,
-  },
-  emptyCarouselSubtext: {
-    fontSize: 14,
-    color: '#9CA3AF',
-    textAlign: 'center',
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginLeft: 6,
   },
 });
 
