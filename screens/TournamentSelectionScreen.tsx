@@ -14,7 +14,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Clock } from 'lucide-react';
 import { Tournament } from '../types/tournament';
-import { VisApiService, TournamentType } from '../services/visApi';
+import { VisApiService } from '../services/visApi';
 
 interface TournamentCardProps {
   tournament: Tournament;
@@ -250,7 +250,8 @@ const TournamentSelectionScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedType, setSelectedType] = useState<TournamentType>('BPT');
+  const [selectedType, setSelectedType] = useState<string>('ALL');
+  const [availableCategories, setAvailableCategories] = useState<string[]>(['ALL']);
   const [currentWeekStart, setCurrentWeekStart] = useState<Date>(getWeekStart(new Date()));
   const router = useRouter();
 
@@ -295,6 +296,10 @@ const TournamentSelectionScreen: React.FC = () => {
       
       console.log(`Loaded ${tournamentList.length} total tournaments`);
       console.log('Tournament sample:', tournamentList.slice(0, 2));
+      
+      // Extract and set available categories from tournament data
+      const categories = extractTournamentCategories(tournamentList);
+      setAvailableCategories(categories);
       setTournaments(tournamentList);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
@@ -353,20 +358,8 @@ const TournamentSelectionScreen: React.FC = () => {
       return weekOverlap;
     }
     
-    // Tournament type filtering - more flexible matching
-    if (selectedType === 'BPT') {
-      // Match BPT tournaments
-      const name = (tournament.Name || tournament.Title || '').toLowerCase();
-      const type = (tournament.Type || tournament.Category || '').toLowerCase();
-      return weekOverlap && (name.includes('bpt') || type.includes('bpt') || name.includes('beach') || name.includes('pro tour'));
-    } else if (selectedType === 'CEV') {
-      // Match CEV tournaments
-      const name = (tournament.Name || tournament.Title || '').toLowerCase();
-      const type = (tournament.Type || tournament.Category || '').toLowerCase();
-      return weekOverlap && (name.includes('cev') || type.includes('cev') || name.includes('european'));
-    }
-    
-    return weekOverlap;
+    // Dynamic tournament type filtering
+    return weekOverlap && matchesTournamentCategory(tournament, selectedType);
   });
 
   // Navigate to previous/next week
@@ -382,6 +375,68 @@ const TournamentSelectionScreen: React.FC = () => {
     setCurrentWeekStart(getWeekStart(new Date()));
   };
 
+  // Extract tournament categories from tournament data
+  const extractTournamentCategories = (tournaments: Tournament[]): string[] => {
+    const categorySet = new Set<string>();
+    categorySet.add('ALL'); // Always include ALL option
+    
+    tournaments.forEach(tournament => {
+      // Extract from various possible category fields
+      const sources = [
+        tournament.Type,
+        tournament.Category,
+        tournament.Series,
+        tournament.League,
+        tournament.Division
+      ].filter(Boolean);
+      
+      sources.forEach(source => {
+        if (typeof source === 'string') {
+          const normalized = source.trim().toUpperCase();
+          if (normalized && normalized !== 'NULL' && normalized !== 'UNDEFINED') {
+            categorySet.add(normalized);
+          }
+        }
+      });
+      
+      // Extract from tournament name patterns
+      const name = (tournament.Name || tournament.Title || '').toUpperCase();
+      if (name.includes('BPT') || name.includes('BEACH PRO TOUR')) {
+        categorySet.add('BPT');
+      }
+      if (name.includes('CEV') || name.includes('EUROPEAN')) {
+        categorySet.add('CEV');
+      }
+      if (name.includes('FIVB') || name.includes('WORLD')) {
+        categorySet.add('FIVB');
+      }
+      if (name.includes('NATIONAL') || name.includes('DOMESTIC')) {
+        categorySet.add('NATIONAL');
+      }
+      if (name.includes('YOUTH') || name.includes('U21') || name.includes('U19')) {
+        categorySet.add('YOUTH');
+      }
+      if (name.includes('QUALIFICATION') || name.includes('QUALIFIER')) {
+        categorySet.add('QUALIFICATION');
+      }
+    });
+    
+    const categories = Array.from(categorySet).sort((a, b) => {
+      // Prioritize common categories
+      const priority = ['ALL', 'BPT', 'CEV', 'FIVB', 'NATIONAL', 'YOUTH', 'QUALIFICATION'];
+      const aIndex = priority.indexOf(a);
+      const bIndex = priority.indexOf(b);
+      
+      if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+      if (aIndex !== -1) return -1;
+      if (bIndex !== -1) return 1;
+      return a.localeCompare(b);
+    });
+    
+    console.log('Extracted categories:', categories);
+    return categories;
+  };
+
   const renderTournament = ({ item }: { item: Tournament }) => (
     <TournamentCard 
       tournament={item} 
@@ -389,29 +444,80 @@ const TournamentSelectionScreen: React.FC = () => {
     />
   );
 
-  const renderFilterTabs = () => {
-    const filterTypes: TournamentType[] = ['ALL', 'BPT', 'CEV'];
+  // Match tournament to category with flexible patterns
+  const matchesTournamentCategory = (tournament: Tournament, category: string): boolean => {
+    if (category === 'ALL') return true;
     
+    const name = (tournament.Name || tournament.Title || '').toUpperCase();
+    const type = (tournament.Type || tournament.Category || tournament.Series || '').toUpperCase();
+    const allText = `${name} ${type}`.trim();
+    
+    // Direct field matching
+    if (type.includes(category)) return true;
+    
+    // Pattern-based matching for common categories
+    switch (category) {
+      case 'BPT':
+        return allText.includes('BPT') || allText.includes('BEACH PRO TOUR') || allText.includes('BEACH PROFESSIONAL');
+      case 'CEV':
+        return allText.includes('CEV') || allText.includes('EUROPEAN') || allText.includes('CONFEDERATION');
+      case 'FIVB':
+        return allText.includes('FIVB') || allText.includes('WORLD') || allText.includes('INTERNATIONAL');
+      case 'NATIONAL':
+        return allText.includes('NATIONAL') || allText.includes('DOMESTIC') || allText.includes('CHAMPIONSHIP');
+      case 'YOUTH':
+        return allText.includes('YOUTH') || allText.includes('U21') || allText.includes('U19') || allText.includes('JUNIOR');
+      case 'QUALIFICATION':
+        return allText.includes('QUALIFICATION') || allText.includes('QUALIFIER') || allText.includes('QUALIFYING');
+      default:
+        // For any other category, check if it appears in the tournament text
+        return allText.includes(category);
+    }
+  };
+
+  const renderFilterTabs = () => {
     return (
-      <View style={styles.filterContainer}>
-        {filterTypes.map((type) => (
-          <TouchableOpacity
-            key={type}
-            style={[
-              styles.filterButton,
-              selectedType === type && styles.activeFilterButton
-            ]}
-            onPress={() => setSelectedType(type)}
-          >
-            <Text style={[
-              styles.filterButtonText,
-              selectedType === type && styles.activeFilterButtonText
-            ]}>
-              {type}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+      <ScrollView 
+        horizontal 
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.filterScrollContainer}
+        style={styles.filterContainer}
+      >
+        {availableCategories.map((category) => {
+          // Get count of tournaments for this category
+          const categoryCount = tournaments.filter(tournament => {
+            if (!tournament.StartDate) return false;
+            if (tournament.Status && tournament.Status.toLowerCase().includes('cancelled')) return false;
+            
+            const tournamentStart = new Date(tournament.StartDate);
+            const tournamentEnd = tournament.EndDate ? new Date(tournament.EndDate) : tournamentStart;
+            const weekStart = new Date(currentWeekStart);
+            const weekEnd = new Date(currentWeekStart);
+            weekEnd.setDate(weekStart.getDate() + 6);
+            
+            const weekOverlap = tournamentStart <= weekEnd && tournamentEnd >= weekStart;
+            return weekOverlap && matchesTournamentCategory(tournament, category);
+          }).length;
+          
+          return (
+            <TouchableOpacity
+              key={category}
+              style={[
+                styles.filterButton,
+                selectedType === category && styles.activeFilterButton
+              ]}
+              onPress={() => setSelectedType(category)}
+            >
+              <Text style={[
+                styles.filterButtonText,
+                selectedType === category && styles.activeFilterButtonText
+              ]}>
+                {category} ({categoryCount})
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
     );
   };
 
@@ -584,29 +690,32 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   filterContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
     marginBottom: 24,
+  },
+  filterScrollContainer: {
     paddingHorizontal: 24,
+    paddingRight: 48, // Extra padding for scroll
+    flexDirection: 'row', // Required for horizontal ScrollView
   },
   filterButton: {
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    marginHorizontal: 8,
-    borderRadius: 24,
-    borderWidth: 2,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginRight: 12,
+    borderRadius: 20,
+    borderWidth: 1,
     borderColor: '#1B365D',
     backgroundColor: 'transparent',
-    minHeight: 44,
+    minHeight: 36,
     justifyContent: 'center',
+    flexShrink: 0, // Prevent button shrinking in scroll
   },
   activeFilterButton: {
     backgroundColor: '#1B365D',
   },
   filterButtonText: {
     color: '#1B365D',
-    fontWeight: 'bold',
-    fontSize: 16,
+    fontWeight: '600',
+    fontSize: 14,
     textAlign: 'center',
   },
   activeFilterButtonText: {
